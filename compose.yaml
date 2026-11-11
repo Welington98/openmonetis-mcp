@@ -1,0 +1,41 @@
+services:
+  openmonetis-mcp:
+    image: ${OPENMONETIS_MCP_IMAGE:-ghcr.io/welington98/openmonetis-mcp:latest}
+    build:
+      context: .
+    restart: unless-stopped
+    env_file:
+      # .env é opcional: as variáveis também podem vir do ambiente do compose.
+      - path: .env
+        required: false
+    environment:
+      # O container sempre escuta em todas as interfaces; a porta publicada é que
+      # restringe o acesso ao host. MCP_HTTP_TOKEN é obrigatório nesse cenário.
+      OPENMONETIS_MCP_HTTP_HOST: 0.0.0.0
+      OPENMONETIS_MCP_HTTP_PORT: "7317"
+    ports:
+      # Publique apenas em loopback e use um reverse proxy para acesso remoto.
+      - "127.0.0.1:7317:7317"
+    extra_hosts:
+      # Permite falar com um OpenMonetis rodando no próprio host (Linux inclusive).
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:7317/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

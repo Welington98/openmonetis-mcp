@@ -8,11 +8,12 @@ WORKDIR /app
 
 FROM base AS build
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY scripts ./scripts
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsup.config.ts biome.json ./
 COPY src ./src
 RUN pnpm build
-RUN pnpm prune --prod
+RUN pnpm prune --prod --ignore-scripts
 
 FROM base AS runtime
 ENV NODE_ENV=production

@@ -141,14 +141,129 @@ node dist/http.js
 
 ### Docker
 
+O `Dockerfile` gera uma imagem enxuta (multi-stage, `node:22-alpine`, usuário `node`) cujo entrypoint
+é o transporte HTTP. Para subir como serviço, veja
+[Rodando como serviço (container)](#rodando-como-serviço-container).
+
+## Rodando como serviço (container)
+
+O transporte `stdio` não faz sentido dentro de um container: o serviço expõe **Streamable HTTP** em
+`/mcp`, com health check em `/health` e autenticação por [BEARER_REDACTED].
+
+### docker compose (recomendado)
+
+```bash
+cp .env.example .env       # preencha OPENMONETIS_URL, credenciais e MCP_HTTP_TOKEN
+docker compose up -d --build
+docker compose logs -f
+```
+
+O `compose.yaml` já traz `restart: unless-stopped`, healthcheck, `read_only`, `no-new-privileges`,
+rotação de logs e publicação **apenas em loopback** (`127.0.0.1:7317`).
+
+```bash
+docker compose ps          # status + healthy
+docker compose pull && docker compose up -d   # atualizar a imagem
+docker compose down        # parar
+```
+
+### docker run
+
 ```bash
 docker build -t openmonetis-mcp .
-docker run --rm -p 7317:7317 \
+
+docker run -d --name openmonetis-mcp \
+  --restart unless-stopped \
+  -p 127.0.0.1:7317:7317 \
+  --add-host=host.docker.internal:host-gateway \
+  -e MCP_HTTP_TOKEN=um-token-longo-e-aleatorio \
   -e OPENMONETIS_URL=https://financas.exemplo.com/api-proxy \
   -e OPENMONETIS_EMAIL=voce@exemplo.com \
   -e OPENMONETIS_PASSWORD=sua-senha \
-  -e MCP_HTTP_TOKEN=um-token-longo-e-aleatorio \
   openmonetis-mcp
+```
+
+### Imagem publicada
+
+O workflow `.github/workflows/release-image.yml` publica `ghcr.io/welington98/openmonetis-mcp` em
+`linux/amd64` e `linux/arm64` quando uma tag `vX.Y.Z` é criada (ou por execução manual). Antes da
+primeira publicação, use `docker compose build` / `docker build`.
+
+### Container falando com OpenMonetis no mesmo host
+
+Dentro do container, `localhost` é o próprio container. Aponte para o host com
+`host.docker.internal` — e, como esse tráfego é `http://`, libere explicitamente:
+
+```dotenv
+OPENMONETIS_URL=http://host.docker.internal:7002/api-proxy
+OPENMONETIS_ALLOW_INSECURE=1        # necessário: http:// não-loopback
+OPENMONETIS_ORIGIN=http://localhost:7002   # precisa estar em trustedOrigins (WEB_URL)
+MCP_HTTP_TOKEN=um-token-longo-e-aleatorio
+```
+
+`OPENMONETIS_ORIGIN` é obrigatório nesse caso porque o default é a origem de `OPENMONETIS_URL`
+(`http://host.docker.internal:7002`), que não consta em `trustedOrigins` do Better Auth. Se o
+OpenMonetis for público em HTTPS, nenhum desses três ajustes é necessário.
+
+Se o OpenMonetis também roda em Docker Compose, o mais limpo é colocar os dois na mesma rede e usar
+o nome do serviço:
+
+```yaml
+services:
+  openmonetis-mcp:
+    networks: [openmonetis]
+  # ...
+networks:
+  openmonetis:
+    external: true
+```
+
+Com `OPENMONETIS_URL=http://api:7001` (ou `http://web:7002/api-proxy`) e `OPENMONETIS_ALLOW_INSECURE=1`.
+
+### Acesso remoto com reverse proxy
+
+Mantenha a porta publicada em loopback e exponha via proxy com TLS:
+
+```nginx
+location /mcp {
+    proxy_pass http://127.0.0.1:7317/mcp;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_buffering off;
+    proxy_read_timeout 3600s;
+}
+```
+
+O `Authorization` do cliente atravessa o proxy; o token do OpenMonetis nunca é exposto, porque vive
+apenas na memória do container.
+
+### Iniciar com o host
+
+`restart: unless-stopped` já cobre reboot desde que o Docker esteja habilitado no boot
+(`systemctl enable docker`). Para amarrar explicitamente ao ciclo do systemd:
+
+```ini
+# /etc/systemd/system/openmonetis-mcp.service
+[Unit]
+Description=OpenMonetis MCP
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/openmonetis-mcp
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable --now openmonetis-mcp
 ```
 
 ## Ferramentas
