@@ -5,6 +5,12 @@ Todas as mudanças notáveis deste projeto são registradas aqui, seguindo
 [SemVer](https://semver.org/lang/pt-BR/). O conteúdo de cada versão é gerado a partir dos commits
 [Conventional Commits](https://www.conventionalcommits.org/pt-br/).
 
+## [0.1.1](https://github.com/Welington98/openmonetis-mcp/compare/v0.1.0...v0.1.1) (2026-11-11)
+
+### Bug Fixes
+
+* **mcp:** não enviar campos omitidos em update_transaction ([948223c](https://github.com/Welington98/openmonetis-mcp/commit/948223c79f61bc00de60a164ee42701ab7729029))
+
 ## 0.1.0 - 2026-11-11
 
 ### Adicionado
