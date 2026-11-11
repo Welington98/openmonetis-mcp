@@ -73,7 +73,7 @@ const BaseTransactionFields = {
   name: z.string().trim().min(1).max(160),
   amount: z.number().positive().max(999_999_999.99),
   type: z.enum(transactionTypes),
-  condition: z.enum(transactionConditions).default("single"),
+  condition: z.enum(transactionConditions),
   paymentMethod: z.enum(paymentMethods),
   purchaseDate: z.iso.date(),
   personId: uuidSchema,
@@ -109,6 +109,7 @@ const BaseTransactionFields = {
 
 const CreateInput = z.object({
   ...BaseTransactionFields,
+  condition: z.enum(transactionConditions).default("single"),
   confirm: z.boolean().optional(),
 });
 
@@ -221,7 +222,7 @@ export const transactionWriteTools: WriteToolSpec[] = [
     name: "update_transaction",
     title: "Atualizar transação",
     description:
-      "Atualiza campos de uma transação existente. Envie apenas os campos que devem mudar. Sem `confirm: true` a ferramenta devolve o payload que seria enviado.",
+      "Atualiza campos de uma transação existente. Envie apenas os campos que devem mudar — campos omitidos são preservados (inclusive `condition`, `installmentCount` e `recurrenceFrequency`). Sem `confirm: true` a ferramenta devolve o payload que seria enviado.",
     inputSchema: UpdateInput.shape,
     plan: (input) => {
       const { id, confirm: _confirm, ...rest } = UpdateInput.parse(input);

@@ -101,7 +101,7 @@ export const registryTools: ReadToolSpec[] = [
     name: "get_person_report",
     title: "Relatório mensal da pessoa",
     description:
-      "Retorna o relatório mensal completo de uma pessoa em um período: linhas de despesas e reembolsos, totais e rateios. É o mesmo conteúdo do PDF enviado por e-mail.",
+      "Retorna o relatório mensal completo de uma pessoa **externa** em um período: linhas de despesas e reembolsos, totais e rateios — o mesmo conteúdo do PDF enviado por e-mail. O administrador não possui relatório (a API responde 400 nesse caso); para ele use get_person_summary.",
     inputSchema: z.object({ personId: uuidSchema, period: periodSchema }).shape,
     handler: async (input, ctx) => {
       const args = z.object({ personId: uuidSchema, period: periodSchema }).parse(input);

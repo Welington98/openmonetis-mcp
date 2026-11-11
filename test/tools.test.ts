@@ -204,6 +204,25 @@ describe("servidor MCP", () => {
     await close();
   });
 
+  it("não injeta defaults em update_transaction", async () => {
+    const { client, close } = await connect(makeConfig(api.url));
+    const id = "11111111-1111-4111-8111-111111111111";
+
+    await client.callTool({
+      name: "update_transaction",
+      arguments: { id, name: "Mercado editado", confirm: true },
+    });
+
+    const patch = api.received("PATCH", `/transactions/${id}`).at(-1);
+    const body = (patch?.body ?? {}) as Record<string, unknown>;
+
+    assert.equal(body.name, "Mercado editado");
+    assert.equal("condition" in body, false, "condition não pode ser enviada por padrão");
+    assert.equal(Object.keys(body).length, 1, "apenas o campo informado deve ir no corpo");
+
+    await close();
+  });
+
   it("bloqueia escritas no modo read-only", async () => {
     const { client, close } = await connect(makeConfig(api.url, { writes: "read-only" }));
 
