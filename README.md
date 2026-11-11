@@ -153,8 +153,10 @@ O transporte `stdio` não faz sentido dentro de um container: o serviço expõe 
 ### docker compose (recomendado)
 
 ```bash
-cp .env.example .env       # preencha OPENMONETIS_URL, credenciais e MCP_HTTP_TOKEN
-docker compose up -d --build
+cp .env.example .env              # preencha OPENMONETIS_URL, credenciais e MCP_HTTP_TOKEN
+docker compose pull && docker compose up -d   # usa a imagem publicada
+# ou, para construir localmente:
+# docker compose up -d --build
 docker compose logs -f
 ```
 
@@ -185,9 +187,25 @@ docker run -d --name openmonetis-mcp \
 
 ### Imagem publicada
 
-O workflow `.github/workflows/release-image.yml` publica `ghcr.io/welington98/openmonetis-mcp` em
-`linux/amd64` e `linux/arm64` quando uma tag `vX.Y.Z` é criada (ou por execução manual). Antes da
-primeira publicação, use `docker compose build` / `docker build`.
+```bash
+docker pull ghcr.io/welington98/openmonetis-mcp:latest
+```
+
+| Imagem | Arquiteturas | Tags |
+| --- | --- | --- |
+| `ghcr.io/welington98/openmonetis-mcp` | `linux/amd64`, `linux/arm64` | `latest`; `X.Y.Z` e `X.Y` a partir de tags `vX.Y.Z` |
+
+O pacote é público (pull anônimo funciona). A publicação é feita pelo workflow
+`.github/workflows/release-image.yml`, disparado por tag `vX.Y.Z` ou execução manual. Tags SemVer só
+aparecem quando a tag Git é criada; execuções manuais publicam apenas `latest`.
+
+Para fixar uma versão em produção, use um digest ou a tag exata:
+
+```yaml
+services:
+  openmonetis-mcp:
+    image: ghcr.io/welington98/openmonetis-mcp:0.1.0
+```
 
 ### Container falando com OpenMonetis no mesmo host
 
