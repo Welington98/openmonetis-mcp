@@ -1,10 +1,21 @@
 name: release image
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  # Chamado pelo workflow `release` após o semantic-release calcular a versão.
+  workflow_call:
+    inputs:
+      version:
+        description: "Versão SemVer publicada (ex.: 0.2.0). Vazio publica apenas latest."
+        required: false
+        type: string
+        default: ""
+  # Republicação manual: sem `version`, gera apenas a tag latest.
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Versão SemVer já existente (ex.: 0.1.0). Deixe vazio para publicar apenas latest."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -29,9 +40,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=latest
 
       - uses: docker/build-push-action@v6
         with:
@@ -42,3 +53,13 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Resumo
+        run: |
+          {
+            echo "### Imagem publicada"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

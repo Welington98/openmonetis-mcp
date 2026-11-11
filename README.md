@@ -284,6 +284,33 @@ WantedBy=multi-user.target
 sudo systemctl enable --now openmonetis-mcp
 ```
 
+## Releases
+
+O versionamento é automático, dirigido por [Conventional Commits](https://www.conventionalcommits.org/pt-br/)
+via [semantic-release](https://semantic-release.gitbook.io). Cada push na `main` executa o workflow
+`release`, que calcula a próxima versão, atualiza `package.json` e `CHANGELOG.md`, cria a tag
+`vX.Y.Z`, publica o GitHub Release e então gera a imagem com as tags SemVer.
+
+| Commit | Efeito |
+| --- | --- |
+| `feat:` | **minor** (`0.1.0` → `0.2.0`) |
+| `fix:`, `perf:`, `refactor:`, `build:` | **patch** (`0.2.0` → `0.2.1`) |
+| `feat!:` ou `BREAKING CHANGE:` | **major** (`0.2.1` → `1.0.0`) |
+| `docs:`, `ci:`, `test:`, `style:`, `chore:` | nenhuma release |
+
+Regras do fluxo:
+
+- Nunca edite a versão em `package.json` nem crie tags à mão: ambas são derivadas dos commits.
+- `src/version.ts` lê a versão do `package.json` em tempo de build (`define` do tsup), então
+  `/health` e o handshake MCP sempre reportam a versão publicada.
+- O commit de release (`chore(release): x.y.z [skip ci]`) não dispara a própria pipeline.
+- A imagem recebe `<versão>`, `<major>.<minor>` e `latest` na mesma execução.
+- Para republicar a imagem sem novo release: `Actions → release image → Run workflow`
+  (opcionalmente informando a versão, ex.: `0.1.0`).
+
+Repositório ainda sem tag? O semantic-release parte de `1.0.0` quando não existe tag anterior, por
+isso a primeira tag (`v0.1.0`) precisa existir antes de automatizar.
+
 ## Ferramentas
 
 ### Leitura

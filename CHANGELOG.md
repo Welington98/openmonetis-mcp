@@ -2,11 +2,10 @@
 
 Todas as mudanças notáveis deste projeto são registradas aqui, seguindo
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e
-[SemVer](https://semver.org/lang/pt-BR/).
+[SemVer](https://semver.org/lang/pt-BR/). O conteúdo de cada versão é gerado a partir dos commits
+[Conventional Commits](https://www.conventionalcommits.org/pt-br/).
 
-## [Unreleased]
-
-## [0.1.0] - 2026-11-11
+## 0.1.0 - 2026-11-11
 
 ### Adicionado
 
@@ -19,8 +18,14 @@ Todas as mudanças notáveis deste projeto são registradas aqui, seguindo
 - 10 ferramentas de escrita com gate `read-only | confirm | full` e dry-run obrigatório no modo
   `confirm`.
 - Anotações MCP (`readOnlyHint`, `destructiveHint`) e mensagens de erro em PT-BR.
-- Servidor HTTP com bearer token, health check e modo stateless.
+- Servidor HTTP com token Bearer, health check e modo stateless.
+- Imagem Docker multi-stage (`node:22-alpine`, usuário `node`) com healthcheck, `read_only` e
+  `no-new-privileges`, além de `compose.yaml` para subir como serviço (`restart: unless-stopped`,
+  porta publicada apenas em loopback).
+- Imagem publicada em `ghcr.io/welington98/openmonetis-mcp` (linux/amd64 e linux/arm64), via
+  workflow disparado por tag `vX.Y.Z` ou execução manual.
+- Script `check:contract` que valida as 37 rotas usadas pelas ferramentas contra o `/openapi.json`
+  de uma instância viva.
+- Script `smoke:live` que exercita as 36 ferramentas contra uma instância real, com ciclo de
+  escrita opcional (`SMOKE_WRITES=1`).
 - Suíte de testes com API fake local, Biome, `tsc --noEmit`, build via tsup e CI no GitHub Actions.
-
-[Unreleased]: https://github.com/Welington98/openmonetis-mcp/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Welington98/openmonetis-mcp/releases/tag/v0.1.0
