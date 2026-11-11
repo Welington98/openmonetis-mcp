@@ -1,0 +1,47 @@
+{
+  "name": "openmonetis-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for the OpenMonetis personal finance API",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "openmonetis-mcp": "./dist/index.js",
+    "openmonetis-mcp-http": "./dist/http.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "dev:http": "tsx src/http.ts",
+    "start": "node dist/index.js",
+    "start:http": "node dist/http.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "prepare": "tsup",
+    "check:contract": "tsx scripts/check-contract.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.23.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.6",
+    "@types/node": "^22.18.9",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "packageManager": "pnpm@11.25.0"
+}
