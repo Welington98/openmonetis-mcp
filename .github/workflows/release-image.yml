@@ -25,7 +25,12 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
+      # Com versão informada, constrói a partir da tag criada pelo semantic-release — é ela que
+      # contém o bump em package.json (e portanto a versão correta em /health). Sem versão,
+      # republica o commit que disparou o workflow.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version != '' && format('v{0}', inputs.version) || github.sha }}
 
       - uses: docker/setup-buildx-action@v3
 
