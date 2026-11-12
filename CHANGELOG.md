@@ -5,6 +5,12 @@ Todas as mudanças notáveis deste projeto são registradas aqui, seguindo
 [SemVer](https://semver.org/lang/pt-BR/). O conteúdo de cada versão é gerado a partir dos commits
 [Conventional Commits](https://www.conventionalcommits.org/pt-br/).
 
+## [0.3.1](https://github.com/Welington98/openmonetis-mcp/compare/v0.3.0...v0.3.1) (2026-11-12)
+
+### Performance Improvements
+
+* **mcp:** reutilizar sessão, minificar JSON e limitar respostas ([#1](https://github.com/Welington98/openmonetis-mcp/issues/1)) ([ab4698c](https://github.com/Welington98/openmonetis-mcp/commit/ab4698cc9658e6041fa8cc30e24e154e8d066ec1))
+
 ## [0.3.0](https://github.com/Welington98/openmonetis-mcp/compare/v0.2.0...v0.3.0) (2026-11-12)
 
 ### Features
