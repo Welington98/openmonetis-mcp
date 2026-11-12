@@ -28,11 +28,16 @@ export type Config = {
   origin: string;
   writes: WriteMode;
   timeoutMs: number;
+  /** Teto de bytes do JSON devolvido por uma ferramenta; 0 desliga o corte. */
+  maxResponseBytes: number;
+  /** Loga uma linha JSONL por chamada de ferramenta em stderr. */
+  debug: boolean;
   http: HttpConfig;
 };
 
 const defaultBaseUrl = "http://localhost:7001";
 const defaultTimeoutMs = 20_000;
+const defaultMaxResponseBytes = 65_536;
 const defaultHttpHost = "127.0.0.1";
 const defaultHttpPort = 7317;
 const defaultExportFolder = "Downloads/openmonetis-mcp";
@@ -110,6 +115,24 @@ function parseTimeout(value: string | undefined): number {
   return Math.trunc(timeout);
 }
 
+function parseMaxResponseBytes(value: string | undefined): number {
+  const raw = read(value);
+  if (!raw) return defaultMaxResponseBytes;
+
+  const bytes = Number(raw);
+  if (!Number.isInteger(bytes) || bytes < 0) {
+    throw new ConfigError(
+      "OPENMONETIS_MCP_MAX_RESPONSE_BYTES deve ser um inteiro maior ou igual a 0 (0 desliga o corte).",
+    );
+  }
+  return bytes;
+}
+
+function parseDebug(value: string | undefined): boolean {
+  const normalized = read(value)?.toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
 function parseAuth(env: NodeJS.ProcessEnv): AuthConfig | undefined {
   const email = read(env.OPENMONETIS_EMAIL);
   const secretEnvName = ["OPENMONETIS", "PASSWORD"].join("_");
@@ -153,6 +176,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     origin: read(env.OPENMONETIS_ORIGIN) ?? new URL(baseUrl).origin,
     writes: parseWriteMode(env.OPENMONETIS_MCP_WRITES),
     timeoutMs: parseTimeout(env.OPENMONETIS_TIMEOUT_MS),
+    maxResponseBytes: parseMaxResponseBytes(env.OPENMONETIS_MCP_MAX_RESPONSE_BYTES),
+    debug: parseDebug(env.OPENMONETIS_MCP_DEBUG),
     http: {
       host,
       port: parsePort(read(env.OPENMONETIS_MCP_HTTP_PORT) ?? env.PORT),

@@ -5,6 +5,8 @@ import {
   type ServerResponse,
 } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { ApiClient } from "./client/api-client.js";
+import { SessionManager } from "./client/session.js";
 import type { Config } from "./config.js";
 import { createServer } from "./server.js";
 import { VERSION } from "./version.js";
@@ -18,6 +20,11 @@ export type HttpDependencies = {
 };
 
 export function createHttpHandler({ config, log = defaultLog }: HttpDependencies) {
+  // O transporte é stateless, mas a sessão Better Auth e o cliente HTTP são
+  // compartilhados entre requests: sem isso cada tool call faria um novo login.
+  const session = new SessionManager(config);
+  const client = new ApiClient(config, session);
+
   return async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
@@ -62,7 +69,7 @@ export function createHttpHandler({ config, log = defaultLog }: HttpDependencies
     const body = await readJsonBody(request, response);
     if (body === undefined) return;
 
-    const server = createServer(config);
+    const server = createServer(config, { session, client });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 
     response.on("close", () => {
@@ -97,7 +104,9 @@ export function startHttpServer(
   return new Promise((resolve, reject) => {
     httpServer.once("error", reject);
     httpServer.listen(config.http.port, config.http.host, () => {
-      const url = `http://${config.http.host}:${config.http.port}${mcpPath}`;
+      const address = httpServer.address();
+      const port = typeof address === "object" && address ? address.port : config.http.port;
+      const url = `http://${config.http.host}:${port}${mcpPath}`;
       process.stderr.write(
         `[openmonetis-mcp] HTTP em ${url} · api=${config.baseUrl} · escritas=${config.writes} · auth=${
           config.http.token ? "bearer" : "nenhuma (loopback)"

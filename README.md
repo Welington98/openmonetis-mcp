@@ -87,6 +87,8 @@ Copie `.env.example` para `.env` e preencha pelo menos `OPENMONETIS_URL` e as cr
 | `OPENMONETIS_ORIGIN` | não | origem de `OPENMONETIS_URL` | Enviado como `Origin` no login. Precisa constar em `trustedOrigins` (`WEB_URL`/`BETTER_AUTH_TRUSTED_ORIGINS`). |
 | `OPENMONETIS_MCP_WRITES` | não | `confirm` | `read-only`, `confirm` (dry-run) ou `full`. |
 | `OPENMONETIS_TIMEOUT_MS` | não | `20000` | Timeout por chamada à API. |
+| `OPENMONETIS_MCP_MAX_RESPONSE_BYTES` | não | `65536` | Teto do JSON devolvido por ferramenta. Acima disso, listas são cortadas com `truncated: true`. `0` desliga. |
+| `OPENMONETIS_MCP_DEBUG` | não | — | `1` loga uma linha JSONL por chamada de ferramenta em stderr (`tool`, `ms`, `bytes`, `ok`). |
 | `OPENMONETIS_EXPORT_DIR` | não | `~/Downloads/openmonetis-mcp` | Diretório onde exportações e modelos de importação são gravados. |
 | `OPENMONETIS_CREDENTIAL_STORE` | não | `keychain`/`secret-tool`/`file` | Força o backend do cofre: `keychain`, `secret-tool`, `file` ou `none`. |
 | `OPENMONETIS_CONFIG_DIR` | não | `~/.config/openmonetis-mcp` | Diretório do cofre quando o backend é arquivo. |
@@ -595,6 +597,7 @@ pnpm typecheck    # tsc --noEmit
 pnpm test         # node:test com API fake local
 pnpm build        # tsup → dist/
 pnpm check        # lint + typecheck + test + build
+pnpm bench:tools  # custo do catálogo em tools/list (bytes e tokens aproximados)
 
 # contrato: gera tipos + snapshot a partir da instância e valida as rotas usadas
 OPENMONETIS_URL=http://localhost:7002/api-proxy pnpm gen:contract
@@ -623,7 +626,7 @@ e commite o diff.
 | --- | --- | --- |
 | `403 Missing or null Origin` | `Origin` ausente ou fora de `trustedOrigins` | Defina `OPENMONETIS_ORIGIN` com a origem pública do web (ex.: `http://localhost:7002` em dev). |
 | `401 Invalid email or password` | Credenciais erradas | Revise `OPENMONETIS_EMAIL`/`OPENMONETIS_PASSWORD`. |
-| `429` no login | Rate limit de 5 tentativas/minuto | Aguarde um minuto; o servidor reaproveita a sessão e só reautentica em `401`. |
+| `429` no login | Rate limit de 5 tentativas/minuto | Aguarde um minuto; o servidor reaproveita a sessão nos dois transportes e só reautentica em `401`. |
 | `404` no login | `OPENMONETIS_URL` sem o prefixo correto | Em produção inclua `/api-proxy`; em dev use a porta da API (`7001`). |
 | Sessão expira e ferramentas falham | Uso de `OPENMONETIS_COOKIE` sem credenciais | Prefira `OPENMONETIS_EMAIL`/`OPENMONETIS_PASSWORD`, que renovam sozinhos. |
 

@@ -14,9 +14,14 @@ export const instructions = [
   "Ferramentas de escrita exigem confirm: true; sem isso elas apenas descrevem o que fariam.",
 ].join(" ");
 
-export function createServer(config: Config): McpServer {
-  const session = new SessionManager(config);
-  const client = new ApiClient(config, session);
+export type ServerDependencies = {
+  session?: SessionManager;
+  client?: ApiClient;
+};
+
+export function createServer(config: Config, deps: ServerDependencies = {}): McpServer {
+  const session = deps.session ?? new SessionManager(config);
+  const client = deps.client ?? new ApiClient(config, session);
 
   const server = new McpServer(
     { name: "openmonetis", version: VERSION },

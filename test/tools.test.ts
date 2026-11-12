@@ -15,6 +15,8 @@ function makeConfig(baseUrl: string, overrides: Partial<Config> = {}): Config {
     auth: { email: "user@example.com", secret: "super-secret" },
     writes: "confirm",
     timeoutMs: 5_000,
+    maxResponseBytes: 65_536,
+    debug: false,
     http: { host: "127.0.0.1", port: 7317 },
     ...overrides,
   };
@@ -264,6 +266,30 @@ describe("servidor MCP", () => {
     assert.equal(payload.dryRun, true);
     assert.equal(payload.details.name, "Mercado");
     assert.equal(payload.details.amount, 120.5);
+
+    await close();
+  });
+
+  it("não busca a transação quando a exclusão é confirmada", async () => {
+    const { client, close } = await connect(makeConfig(api.url));
+    const id = "11111111-1111-4111-8111-111111111111";
+    const path = `/transactions/${id}`;
+    const getsBefore = api.received("GET", path).length;
+
+    api.on("DELETE", path, () => ({ body: { data: { ok: true }, error: null } }));
+
+    const result = await client.callTool({
+      name: "delete_transaction",
+      arguments: { id, confirm: true },
+    });
+
+    assert.equal(isError(result), false);
+    assert.equal(
+      api.received("GET", path).length,
+      getsBefore,
+      "não deve haver GET de pré-checagem",
+    );
+    assert.equal(api.received("DELETE", path).length, 1);
 
     await close();
   });

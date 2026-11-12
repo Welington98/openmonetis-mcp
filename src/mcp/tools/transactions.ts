@@ -253,23 +253,31 @@ export const transactionWriteTools: WriteToolSpec[] = [
     destructive: true,
     plan: async (input, ctx) => {
       const args = IdInput.extend({ confirm: z.boolean().optional() }).parse(input);
-      const existing = await fetchTransactionOrNull(ctx.client, args.id);
+      // Com confirm: true o resultado do plano é descartado; evita um GET inútil.
+      const existing =
+        args.confirm === true ? null : await fetchTransactionOrNull(ctx.client, args.id);
 
       return {
         action: "Excluir transação",
         method: "DELETE",
         path: `/transactions/${args.id}`,
-        details: existing
-          ? {
-              name: existing.name,
-              amount: existing.displayAmount,
-              purchaseDate: existing.purchaseDate,
-              category: existing.categoryName,
-            }
-          : { warning: "Transação não encontrada ou já removida." },
-        summary: existing
-          ? `Excluir "${String(existing.name)}" de ${formatMoney(existing.displayAmount)} (${String(existing.purchaseDate)}).`
-          : `Excluir transação ${args.id}.`,
+        details:
+          args.confirm === true
+            ? undefined
+            : existing
+              ? {
+                  name: existing.name,
+                  amount: existing.displayAmount,
+                  purchaseDate: existing.purchaseDate,
+                  category: existing.categoryName,
+                }
+              : { warning: "Transação não encontrada ou já removida." },
+        summary:
+          args.confirm === true
+            ? `Excluir transação ${args.id}.`
+            : existing
+              ? `Excluir "${String(existing.name)}" de ${formatMoney(existing.displayAmount)} (${String(existing.purchaseDate)}).`
+              : `Excluir transação ${args.id}.`,
       };
     },
   },
