@@ -641,8 +641,13 @@ e commite o diff.
 
 ## Contribuindo
 
-A `main` é protegida: toda mudança entra por pull request com os checks `check` (CI) e `e2e`
-verdes. O release e o commit `chore(release)` são gerados pelo semantic-release após o merge.
+A `main` tem histórico protegido por ruleset: **force-push, deleção e recriação do branch são
+bloqueados**. Mudanças entram por pull request com os checks `check` (CI) e `e2e` verdes — o
+semantic-release continua commitando direto na `main` porque o repositório é de usuário, onde o
+GitHub não permite dar bypass ao Actions.
+
+> Para exigir PR de forma *impositiva* (e não por convenção), é preciso um token de release
+> (PAT ou GitHub App) com bypass de administrador — o semantic-release passaria a usar esse token.
 
 ```bash
 git switch -c feat/minha-mudanca
