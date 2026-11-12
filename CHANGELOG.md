@@ -5,6 +5,12 @@ Todas as mudanças notáveis deste projeto são registradas aqui, seguindo
 [SemVer](https://semver.org/lang/pt-BR/). O conteúdo de cada versão é gerado a partir dos commits
 [Conventional Commits](https://www.conventionalcommits.org/pt-br/).
 
+## [0.3.2](https://github.com/Welington98/openmonetis-mcp/compare/v0.3.1...v0.3.2) (2026-11-12)
+
+### Performance Improvements
+
+* **mcp:** cache, retry e perfil core de catálogo (fase 2) ([#2](https://github.com/Welington98/openmonetis-mcp/issues/2)) ([99a9b2d](https://github.com/Welington98/openmonetis-mcp/commit/99a9b2daef42bf9741bb690792191c9916d13f70))
+
 ## [0.3.1](https://github.com/Welington98/openmonetis-mcp/compare/v0.3.0...v0.3.1) (2026-11-12)
 
 ### Performance Improvements
