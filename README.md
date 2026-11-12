@@ -6,7 +6,7 @@ OpenMonetis — sem acesso direto ao banco e sem duplicar regra de negócio.
 
 - **Cliente HTTP puro** da API pública do OpenMonetis (`/openapi.json` é o contrato).
 - **Autenticação** por sessão Better Auth (`email` + `senha`), com renovação automática em `401`.
-- **36 ferramentas** de leitura e escrita, com *dry-run* obrigatório nas alterações.
+- **75 ferramentas** de leitura e escrita, com *dry-run* obrigatório nas alterações.
 - **Dois transportes**: `stdio` (local) e Streamable HTTP (remoto, protegido por bearer token).
 
 ## Como funciona
@@ -49,6 +49,7 @@ Copie `.env.example` para `.env` e preencha pelo menos `OPENMONETIS_URL` e as cr
 | `OPENMONETIS_ORIGIN` | não | origem de `OPENMONETIS_URL` | Enviado como `Origin` no login. Precisa constar em `trustedOrigins` (`WEB_URL`/`BETTER_AUTH_TRUSTED_ORIGINS`). |
 | `OPENMONETIS_MCP_WRITES` | não | `confirm` | `read-only`, `confirm` (dry-run) ou `full`. |
 | `OPENMONETIS_TIMEOUT_MS` | não | `20000` | Timeout por chamada à API. |
+| `OPENMONETIS_EXPORT_DIR` | não | `~/Downloads/openmonetis-mcp` | Diretório onde exportações e modelos de importação são gravados. |
 | `OPENMONETIS_ALLOW_INSECURE` | não | — | `1` libera `http://` para host remoto. Evite. |
 | `OPENMONETIS_MCP_HTTP_HOST` | não | `127.0.0.1` | Host do transporte HTTP. |
 | `OPENMONETIS_MCP_HTTP_PORT` | não | `7317` | Porta do transporte HTTP. |
@@ -339,6 +340,23 @@ isso a primeira tag (`v0.1.0`) precisa existir antes de automatizar.
 | `list_recurring_expenses` | Despesas recorrentes ativas no mês. |
 | `get_settings` / `list_notifications` | Preferências e notificações acionáveis. |
 
+| `list_inbox_items` | Notificações capturadas, por status e app de origem. |
+| `get_inbox_snapshot` | Contagens e últimos itens pendentes da caixa de entrada. |
+| `list_inbox_rules` | Regras que categorizam capturas automaticamente. |
+| `suggest_inbox_item` | Categoria/pessoa que as regras aplicariam a um item. |
+| `preview_transaction_import` | Lê OFX/CSV/XLSX por caminho local e mostra o que seria importado. |
+| `export_transactions` | Exporta CSV/XLSX para arquivo no host e devolve o caminho. |
+| `get_import_template` | Baixa a planilha modelo de importação. |
+| `list_transaction_attachments` / `list_attachments` | Anexos de uma transação ou do mês. |
+| `get_attachment_download_url` | URL assinada e temporária de um anexo. |
+| `list_installments` | Séries parceladas do mês com progresso e parcelas pendentes. |
+| `quote_installments` | Cotação da antecipação de parcelas para uma fatura. |
+| `list_person_connections` / `list_person_invitations` | Conexões e convites entre pessoas. |
+| `list_person_settlements` / `get_person_balance` | Acertos e saldo com cada pessoa. |
+| `get_ai_status` | Provedores de IA, ferramentas e escopos de dados compartilhados. |
+| `list_ai_diagnoses` / `get_ai_diagnosis` | Diagnósticos financeiros gerados por IA. |
+| `list_ai_chats` / `get_ai_chat` | Conversas com o assistente financeiro. |
+
 ### Escrita
 
 | Ferramenta | O que faz |
@@ -352,6 +370,30 @@ isso a primeira tag (`v0.1.0`) precisa existir antes de automatizar.
 | `pay_bill` | Registra pagamento de conta a pagar. |
 | `create_budget` | Define orçamento de uma categoria no mês. |
 | `create_goal` | Cria meta manual ou vinculada a uma conta. |
+| `confirm_inbox_item` | Converte um item da caixa de entrada em lançamento. |
+| `discard_inbox_items` | Descarta itens da caixa de entrada. |
+| `create_inbox_rule` / `delete_inbox_rule` | Cria e exclui regras de categorização automática. |
+| `import_transactions` / `delete_import_batch` | Importa o extrato revisado e desfaz um lote. |
+| `upload_attachment` / `delete_attachment` | Envia arquivo do host (prepare → upload → confirm) e exclui anexos. |
+| `anticipate_installments` / `undo_installment_anticipation` | Antecipa parcelas para uma fatura e desfaz. |
+| `create_person_invitation` / `cancel_person_invitation` | Convida uma pessoa e cancela o convite. |
+| `revoke_person_connection` | Revoga o acesso de uma pessoa conectada. |
+| `create_person_settlement` / `delete_person_settlement` | Registra e exclui acertos entre pessoas. |
+| `create_ai_diagnosis` / `cancel_ai_diagnosis` | Solicita e cancela um diagnóstico de IA. |
+| `delete_ai_chat` | Exclui uma conversa com a IA. |
+
+### Arquivos locais
+
+`export_transactions`, `get_import_template` e `upload_attachment` leem/gravam **no host onde o MCP
+roda** — no transporte `stdio` é a sua máquina; no modo HTTP é o container. Nesse caso, monte um
+volume para o diretório de exportação:
+
+```yaml
+    volumes:
+      - ./exports:/home/node/Downloads/openmonetis-mcp
+```
+
+e defina `OPENMONETIS_EXPORT_DIR=/home/node/Downloads/openmonetis-mcp`.
 
 ### Modos de escrita
 
@@ -410,8 +452,12 @@ sessão, envelope de erro, paginação, dry-run e o gate de escrita.
 ## Limitações
 
 - **Single-user** por processo; não há multi-tenancy nem OAuth por usuário.
-- Cobre os endpoints financeiros principais, não a totalidade das ~150 rotas da API (inbox de
-  notificações, importação de extratos, anexos, IA e integrações ficam de fora da v0.1).
+- Cobre **79 dos ~170 endpoints** da API. Fora do escopo: configuração de provedores de IA
+  (login OAuth), regras de vencimento, importação de despesas externas, antecipação de faturas,
+  device tokens, releases, notificações individuais e o CRUD completo de preferências.
+- **Chat com IA não é exposto**: `/ai-chats/{id}/messages` responde em SSE e o streaming não cabe
+  bem no protocolo de ferramentas. Diagnósticos (`create_ai_diagnosis`) funcionam normalmente.
+- **Anexos** exigem storage S3 configurado na instância; sem isso o upload retorna 503.
 - `@openmonetis/*` não é importado de propósito: este repositório é independente do monorepo, e o
   contrato é a API HTTP pública.
 

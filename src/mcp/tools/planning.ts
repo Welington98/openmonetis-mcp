@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { InputError } from "../../client/errors.js";
 import type { ReadToolSpec, WriteToolSpec } from "../runner.js";
 import { periodSchema, uuidSchema } from "../schemas/common.js";
 
@@ -156,10 +157,10 @@ export const planningWriteTools: WriteToolSpec[] = [
       const { confirm: _confirm, ...rest } = args;
 
       if (rest.trackingType === "manual" && rest.currentAmount === undefined) {
-        throw new Error("Metas manuais exigem currentAmount.");
+        throw new InputError("Metas manuais exigem currentAmount.");
       }
       if (rest.trackingType === "account" && !rest.accountId) {
-        throw new Error("Metas vinculadas a conta exigem accountId.");
+        throw new InputError("Metas vinculadas a conta exigem accountId.");
       }
 
       const body =

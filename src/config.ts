@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { ConfigError } from "./client/errors.js";
 
 export type WriteMode = "read-only" | "confirm" | "full";
@@ -16,6 +18,8 @@ export type AuthConfig = {
 
 export type Config = {
   baseUrl: string;
+  /** Diretório local onde exportações e modelos de importação são gravados. */
+  exportDir: string;
   auth?: AuthConfig;
   /** Pre-built Cookie header, used when sign-in is not desired. */
   sessionCookie?: string;
@@ -30,6 +34,7 @@ const defaultBaseUrl = "http://localhost:7001";
 const defaultTimeoutMs = 20_000;
 const defaultHttpHost = "127.0.0.1";
 const defaultHttpPort = 7317;
+const defaultExportFolder = "Downloads/openmonetis-mcp";
 
 function read(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
@@ -128,9 +133,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const cookieEnvName = ["OPENMONETIS", "COOKIE"].join("_");
   const baseUrl = parseBaseUrl(env.OPENMONETIS_URL, allowInsecure);
+  const exportDirEnvName = ["OPENMONETIS", "EXPORT_DIR"].join("_");
 
   return {
     baseUrl,
+    exportDir: read(env[exportDirEnvName]) ?? join(homedir(), defaultExportFolder),
     auth: parseAuth(env),
     sessionCookie: read(env[cookieEnvName]),
     origin: read(env.OPENMONETIS_ORIGIN) ?? new URL(baseUrl).origin,

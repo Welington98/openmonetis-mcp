@@ -45,6 +45,12 @@ export type WritePlan = {
 export type WriteToolSpec = BaseSpec & {
   destructive?: boolean;
   plan: (input: Record<string, unknown>, ctx: ToolContext) => Promise<WritePlan> | WritePlan;
+  /** Substitui a execução padrão (uma requisição) quando a operação tem vários passos. */
+  execute?: (
+    input: Record<string, unknown>,
+    ctx: ToolContext,
+    plan: WritePlan,
+  ) => Promise<ToolPayload>;
 };
 
 export type ToolCatalog = {
@@ -119,6 +125,10 @@ async function executeWrite(spec: WriteToolSpec, input: Record<string, unknown>,
       notice:
         "Nada foi alterado. Reenvie a mesma chamada com confirm: true para aplicar a alteração.",
     });
+  }
+
+  if (spec.execute) {
+    return toResult(await spec.execute(input, ctx, plan));
   }
 
   const data = await ctx.client.request<unknown>(plan.method, plan.path, { body: plan.body });

@@ -9,6 +9,7 @@ import { FakeApi } from "./helpers/fake-api.js";
 function makeConfig(baseUrl: string, overrides: Partial<Config> = {}): Config {
   return {
     baseUrl,
+    exportDir: "/tmp/openmonetis-mcp-test",
     origin: new URL(baseUrl).origin,
     auth: { email: "user@example.com", secret: "super-secret" },
     writes: "confirm",

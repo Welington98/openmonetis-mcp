@@ -150,6 +150,15 @@ async function main(): Promise<void> {
     endPeriod: shiftPeriod(period, 2),
   });
   await call("leitura", "list_recurring_expenses", { period });
+  await call("leitura", "list_inbox_items", {});
+  await call("leitura", "get_inbox_snapshot", {});
+  await call("leitura", "list_inbox_rules", {});
+  await call("leitura", "list_attachments", { period });
+  await call("leitura", "list_installments", { period });
+  await call("leitura", "list_person_connections", {});
+  await call("leitura", "list_person_invitations", {});
+  await call("leitura", "list_person_settlements", { period });
+  await call("leitura", "get_ai_status", {}, { optional: true });
 
   const peoplePayload = await call("leitura", "list_people", {});
   const people = asArray(peoplePayload);
@@ -266,7 +275,7 @@ async function main(): Promise<void> {
       name: "Meta smoke MCP",
       targetAmount: 1000,
       currentAmount: 0,
-      targetDate: shiftPeriod(period, 6) + "-01",
+      targetDate: `${shiftPeriod(period, 6)}-01`,
       trackingType: "manual",
       confirm: true,
     });

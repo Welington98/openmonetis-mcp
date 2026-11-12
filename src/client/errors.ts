@@ -9,6 +9,9 @@ export class ConfigError extends OpenMonetisError {}
 
 export class NetworkError extends OpenMonetisError {}
 
+/** Erro de uso da ferramenta (argumento inconsistente), não de rede ou da API. */
+export class InputError extends OpenMonetisError {}
+
 export class AuthError extends OpenMonetisError {
   constructor(
     message: string,

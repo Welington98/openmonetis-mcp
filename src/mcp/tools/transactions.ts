@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ApiError } from "../../client/errors.js";
+import { ApiError, InputError } from "../../client/errors.js";
 import type { ReadToolSpec, WriteToolSpec } from "../runner.js";
 import { periodSchema, uuidSchema } from "../schemas/common.js";
 
@@ -107,11 +107,13 @@ const BaseTransactionFields = {
     .describe("Divisão entre pessoas. A soma deve ser igual ao amount."),
 };
 
-const CreateInput = z.object({
+export const CreateTransactionInput = z.object({
   ...BaseTransactionFields,
   condition: z.enum(transactionConditions).default("single"),
   confirm: z.boolean().optional(),
 });
+
+const CreateInput = CreateTransactionInput;
 
 const UpdateInput = z
   .object(BaseTransactionFields)
@@ -229,7 +231,7 @@ export const transactionWriteTools: WriteToolSpec[] = [
       const fields = Object.entries(rest).filter(([, value]) => value !== undefined);
 
       if (fields.length === 0) {
-        throw new Error("Informe ao menos um campo para atualizar.");
+        throw new InputError("Informe ao menos um campo para atualizar.");
       }
 
       return {
