@@ -5,6 +5,12 @@ Todas as mudanças notáveis deste projeto são registradas aqui, seguindo
 [SemVer](https://semver.org/lang/pt-BR/). O conteúdo de cada versão é gerado a partir dos commits
 [Conventional Commits](https://www.conventionalcommits.org/pt-br/).
 
+## [0.3.3](https://github.com/Welington98/openmonetis-mcp/compare/v0.3.2...v0.3.3) (2026-11-12)
+
+### Bug Fixes
+
+* **mcp:** deixar claro que transferência só aceita condition single ([#3](https://github.com/Welington98/openmonetis-mcp/issues/3)) ([b2be109](https://github.com/Welington98/openmonetis-mcp/commit/b2be109acf3b720815ebc9f5fd062d312b98491e))
+
 ## [0.3.2](https://github.com/Welington98/openmonetis-mcp/compare/v0.3.1...v0.3.2) (2026-11-12)
 
 ### Performance Improvements
