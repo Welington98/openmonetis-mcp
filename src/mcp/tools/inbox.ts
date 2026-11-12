@@ -2,7 +2,7 @@ import { z } from "zod";
 import { InputError } from "../../client/errors.js";
 import type { ReadToolSpec, WriteToolSpec } from "../runner.js";
 import { uuidSchema } from "../schemas/common.js";
-import { CreateTransactionInput } from "./transactions.js";
+import { CreateTransactionFields } from "./transactions.js";
 
 const inboxStatuses = ["pending", "processed", "discarded"] as const;
 const textConditionFields = [
@@ -48,7 +48,7 @@ const CreateRuleInput = z.object({
   confirm: z.boolean().optional(),
 });
 
-const ConfirmItemInput = CreateTransactionInput.omit({ confirm: true }).extend({
+const ConfirmItemInput = CreateTransactionFields.omit({ confirm: true }).extend({
   inboxItemId: uuidSchema.describe("ID do item da caixa de entrada."),
   confirm: z.boolean().optional(),
 });
