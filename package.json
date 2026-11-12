@@ -31,6 +31,7 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "prepare": "node scripts/prepare.mjs",
     "check:contract": "tsx scripts/check-contract.ts",
+    "bench:tools": "tsx scripts/bench-tools.ts",
     "smoke:live": "tsx scripts/smoke-live.ts",
     "gen:contract": "tsx scripts/gen-contract.ts"
   },

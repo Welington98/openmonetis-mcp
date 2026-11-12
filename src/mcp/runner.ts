@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ZodError, type z } from "zod";
 import type { ApiClient, HttpMethod } from "../client/api-client.js";
 import {
@@ -78,9 +79,9 @@ function registerRead(server: McpServer, spec: ReadToolSpec, ctx: ToolContext): 
       },
     },
     async (input) =>
-      guarded(async () => {
+      guarded(spec.name, ctx, async () => {
         const payload = await spec.handler(input as Record<string, unknown>, ctx);
-        return toResult(payload);
+        return toResult(payload, ctx);
       }),
   );
 }
@@ -99,7 +100,10 @@ function registerWrite(server: McpServer, spec: WriteToolSpec, ctx: ToolContext)
         openWorldHint: false,
       },
     },
-    async (input) => guarded(async () => executeWrite(spec, input as Record<string, unknown>, ctx)),
+    async (input) =>
+      guarded(spec.name, ctx, async () =>
+        executeWrite(spec, input as Record<string, unknown>, ctx),
+      ),
   );
 }
 
@@ -115,65 +119,102 @@ async function executeWrite(spec: WriteToolSpec, input: Record<string, unknown>,
   const requiresConfirmation = ctx.config.writes === "confirm" && input.confirm !== true;
 
   if (requiresConfirmation) {
-    return jsonResult({
-      dryRun: true,
-      action: plan.action,
-      method: plan.method,
-      path: plan.path,
-      body: plan.body ?? null,
-      details: plan.details ?? null,
-      notice:
-        "Nada foi alterado. Reenvie a mesma chamada com confirm: true para aplicar a alteração.",
-    });
+    return jsonResult(
+      {
+        dryRun: true,
+        action: plan.action,
+        method: plan.method,
+        path: plan.path,
+        body: plan.body ?? null,
+        details: plan.details ?? null,
+        notice:
+          "Nada foi alterado. Reenvie a mesma chamada com confirm: true para aplicar a alteração.",
+      },
+      { maxBytes: ctx.config.maxResponseBytes },
+    );
   }
 
   if (spec.execute) {
-    return toResult(await spec.execute(input, ctx, plan));
+    return toResult(await spec.execute(input, ctx, plan), ctx);
   }
 
   const data = await ctx.client.request<unknown>(plan.method, plan.path, { body: plan.body });
   const summary = plan.summary ? `${plan.summary} (aplicado)` : undefined;
 
-  return jsonResult({ ok: true, action: plan.action, data }, { summary });
+  return jsonResult(
+    { ok: true, action: plan.action, data },
+    { summary, maxBytes: ctx.config.maxResponseBytes },
+  );
 }
 
-function toResult(payload: ToolPayload) {
+function toResult(payload: ToolPayload, ctx: ToolContext): CallToolResult {
   if (payload.data === undefined && payload.text !== undefined) {
     return textResult(payload.summary ? `${payload.summary}\n\n${payload.text}` : payload.text);
   }
 
-  return jsonResult(payload.data ?? null, { summary: payload.summary });
+  return jsonResult(payload.data ?? null, {
+    summary: payload.summary,
+    maxBytes: ctx.config.maxResponseBytes,
+  });
 }
 
-async function guarded(operation: () => Promise<ReturnType<typeof jsonResult>>) {
+async function guarded(
+  tool: string,
+  ctx: ToolContext,
+  operation: () => Promise<CallToolResult>,
+): Promise<CallToolResult> {
+  const startedAt = performance.now();
+  let result: CallToolResult;
+
   try {
-    return await operation();
+    result = await operation();
   } catch (error) {
-    if (error instanceof ZodError) {
-      return errorResult("Argumentos inválidos para esta ferramenta.", formatZodError(error));
-    }
-
-    if (error instanceof ApiError) {
-      return errorResult(error.message, error.code ? `Código da API: ${error.code}` : undefined);
-    }
-
-    if (error instanceof AuthError) {
-      return errorResult(error.message, error.hint);
-    }
-
-    if (
-      error instanceof ConfigError ||
-      error instanceof NetworkError ||
-      error instanceof OpenMonetisError
-    ) {
-      return errorResult(error.message);
-    }
-
-    return errorResult(
-      "Erro inesperado ao falar com o OpenMonetis.",
-      error instanceof Error ? error.message : String(error),
-    );
+    result = toErrorResult(error);
   }
+
+  if (ctx.config.debug) logCall(tool, startedAt, result);
+
+  return result;
+}
+
+function logCall(tool: string, startedAt: number, result: CallToolResult): void {
+  const text = result.content.map((item) => (item.type === "text" ? item.text : "")).join("");
+
+  process.stderr.write(
+    `${JSON.stringify({
+      tool,
+      ms: Math.round(performance.now() - startedAt),
+      bytes: Buffer.byteLength(text, "utf8"),
+      ok: result.isError !== true,
+    })}\n`,
+  );
+}
+
+function toErrorResult(error: unknown): CallToolResult {
+  if (error instanceof ZodError) {
+    return errorResult("Argumentos inválidos para esta ferramenta.", formatZodError(error));
+  }
+
+  if (error instanceof ApiError) {
+    return errorResult(error.message, error.code ? `Código da API: ${error.code}` : undefined);
+  }
+
+  if (error instanceof AuthError) {
+    return errorResult(error.message, error.hint);
+  }
+
+  if (
+    error instanceof ConfigError ||
+    error instanceof NetworkError ||
+    error instanceof OpenMonetisError
+  ) {
+    return errorResult(error.message);
+  }
+
+  return errorResult(
+    "Erro inesperado ao falar com o OpenMonetis.",
+    error instanceof Error ? error.message : String(error),
+  );
 }
 
 function formatZodError(error: ZodError): string {

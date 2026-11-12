@@ -19,6 +19,8 @@ function makeConfig(baseUrl: string, overrides: Partial<Config> = {}): Config {
     auth: { email: "user@example.com", secret: "super-secret" },
     writes: "confirm",
     timeoutMs: 5_000,
+    maxResponseBytes: 65_536,
+    debug: false,
     http: { host: "127.0.0.1", port: 7317 },
     ...overrides,
   };

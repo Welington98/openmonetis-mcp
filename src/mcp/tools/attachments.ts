@@ -106,6 +106,24 @@ export const attachmentWriteTools: WriteToolSpec[] = [
     inputSchema: UploadInput.shape,
     plan: async (input) => {
       const args = UploadInput.parse(input);
+
+      // Com confirm: true o plano é descartado e o arquivo seria lido duas vezes
+      // (aqui e no execute). Valida só a extensão, sem tocar no conteúdo.
+      if (args.confirm === true) {
+        const mimeType = args.mimeType ?? guessMimeType(args.filePath);
+        if (!mimeType) {
+          throw new InputError("Extensão não suportada. Use .pdf, .jpg, .jpeg, .png ou .webp.");
+        }
+
+        return {
+          action: "Anexar arquivo",
+          method: "POST",
+          path: "/attachments/prepare",
+          details: { transactionId: args.transactionId, mimeType },
+          summary: `Anexar arquivo à transação ${args.transactionId}.`,
+        };
+      }
+
       const file = await readLocalFile(args.filePath, 20_000_000);
       const mimeType = args.mimeType ?? guessMimeType(file.fileName);
 
