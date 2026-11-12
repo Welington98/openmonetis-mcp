@@ -35,7 +35,28 @@ export function buildQueryString(query: Record<string, unknown> = {}): string {
   return serialized ? `?${serialized}` : "";
 }
 
+/** Status transitórios que valem uma nova tentativa em leituras. */
+const retryableStatuses = new Set([429, 500, 502, 503, 504]);
+/** Teto de espera ditado por Retry-After; acima disso o agente travaria. */
+const maxRetryAfterMs = 2_000;
+const backoffBaseMs = 100;
+
+type CacheEntry = {
+  /** Path já normalizado, usado na invalidação por prefixo. */
+  path: string;
+  expiresAt: number;
+  value: unknown;
+};
+
 export class ApiClient {
+  private readonly cache = new Map<string, CacheEntry>();
+  private readonly inflight = new Map<string, Promise<unknown>>();
+  /**
+   * Incrementado a cada escrita. Uma leitura iniciada antes da escrita só entra
+   * no cache se a geração não mudou, o que evita guardar dado obsoleto.
+   */
+  private generation = 0;
+
   constructor(
     private readonly config: Config,
     private readonly session: SessionManager,
@@ -49,18 +70,71 @@ export class ApiClient {
     return this.request<T>("GET", path, { query });
   }
 
+  /** Limpa o cache e cancela o compartilhamento de leituras em voo. */
+  clearCache(): void {
+    this.generation += 1;
+    this.cache.clear();
+    this.inflight.clear();
+  }
+
   async request<T>(method: HttpMethod, path: string, options: RequestOptions = {}): Promise<T> {
-    const response = await this.dispatch(method, path, options, false);
-    return this.parse<T>(response, method, path);
+    const relative = path.startsWith("/") ? path : `/${path}`;
+
+    if (!isRead(method) || this.config.cacheTtlMs <= 0) {
+      const response = await this.dispatch(method, relative, options);
+      if (isRead(method)) return this.parse<T>(response, method, relative);
+
+      try {
+        return await this.parse<T>(response, method, relative);
+      } finally {
+        this.invalidate(relative);
+      }
+    }
+
+    // A chave já usa a query canônica: mesma ordem de parâmetros = mesma entrada.
+    const key = `${method} ${relative}${buildQueryString(options.query)}`;
+
+    const cached = this.cache.get(key);
+    if (cached) {
+      if (cached.expiresAt > Date.now()) return cached.value as T;
+      this.cache.delete(key);
+    }
+
+    // Single-flight: chamadas concorrentes com a mesma chave dividem a Promise.
+    const pending = this.inflight.get(key);
+    if (pending) return pending as Promise<T>;
+
+    const generation = this.generation;
+    const run = (async () => {
+      const response = await this.dispatch(method, relative, options);
+      const value = await this.parse<T>(response, method, relative);
+
+      if (this.generation === generation) {
+        this.cache.set(key, {
+          path: relative,
+          expiresAt: Date.now() + this.config.cacheTtlMs,
+          value,
+        });
+      }
+
+      return value;
+    })();
+
+    this.inflight.set(key, run);
+    try {
+      return await run;
+    } finally {
+      this.inflight.delete(key);
+    }
   }
 
   private async dispatch(
     method: HttpMethod,
     path: string,
     options: RequestOptions,
-    renewed: boolean,
+    renewed = false,
   ): Promise<Response> {
-    const response = await this.sendOnce(method, path, options);
+    const response = await this.sendWithRetry(method, path, options);
     this.session.absorb(response.headers.getSetCookie?.() ?? []);
 
     if (response.status === 401 && !renewed && this.session.canSignIn) {
@@ -69,6 +143,36 @@ export class ApiClient {
     }
 
     return response;
+  }
+
+  /**
+   * Repete apenas leituras em erros transitórios. O AbortSignal é criado dentro
+   * de `sendOnce`, então o timeout vale por tentativa e não para o total.
+   */
+  private async sendWithRetry(
+    method: HttpMethod,
+    path: string,
+    options: RequestOptions,
+  ): Promise<Response> {
+    const retries = isRead(method) ? this.config.retryAttempts : 0;
+
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const response = await this.sendOnce(method, path, options);
+
+        if (attempt < retries && retryableStatuses.has(response.status)) {
+          const waitMs = retryAfterMs(response) ?? backoffMs(attempt);
+          await discard(response);
+          await sleep(waitMs);
+          continue;
+        }
+
+        return response;
+      } catch (error) {
+        if (!(error instanceof NetworkError) || attempt >= retries) throw error;
+        await sleep(backoffMs(attempt));
+      }
+    }
   }
 
   private async sendOnce(
@@ -110,6 +214,24 @@ export class ApiClient {
     }
   }
 
+  /**
+   * Invalida só o primeiro segmento do path escrito (`/transactions/x` limpa
+   * `/transactions*`). O catálogo é organizado por recurso, então mudar um item
+   * não afeta leituras de `/budgets` ou `/cards`, por exemplo.
+   */
+  private invalidate(path: string): void {
+    this.generation += 1;
+
+    const segment = firstSegment(path);
+    for (const [key, entry] of this.cache) {
+      if (firstSegment(entry.path) === segment) this.cache.delete(key);
+    }
+    for (const key of this.inflight.keys()) {
+      const entryPath = key.split(" ")[1] ?? "";
+      if (firstSegment(entryPath) === segment) this.inflight.delete(key);
+    }
+  }
+
   private async parse<T>(response: Response, method: HttpMethod, path: string): Promise<T> {
     const text = await response.text();
 
@@ -139,6 +261,45 @@ export class ApiClient {
 
     return parsed as T;
   }
+}
+
+function isRead(method: string): boolean {
+  return method === "GET" || method === "HEAD";
+}
+
+function firstSegment(path: string): string {
+  const trimmed = path.replace(/^\/+/, "");
+  const [segment = ""] = trimmed.split("/");
+  return segment;
+}
+
+function backoffMs(attempt: number): number {
+  const base = backoffBaseMs * 3 ** attempt;
+  const jitter = base * 0.25 * (Math.random() * 2 - 1);
+  return Math.max(0, Math.round(base + jitter));
+}
+
+function retryAfterMs(response: Response): number | undefined {
+  const header = response.headers.get("retry-after");
+  if (!header) return undefined;
+
+  const seconds = Number(header);
+  const millis = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(header) - Date.now();
+  if (!Number.isFinite(millis) || millis < 0) return undefined;
+
+  return Math.min(Math.round(millis), maxRetryAfterMs);
+}
+
+async function discard(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Corpo já consumido: nada a liberar.
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function safeJson(text: string): unknown {
