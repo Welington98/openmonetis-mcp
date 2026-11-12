@@ -1,8 +1,17 @@
 import { z } from "zod";
 import type { ReadToolSpec, WriteToolSpec } from "../runner.js";
 import { periodSchema, uuidSchema } from "../schemas/common.js";
+import { asArray, asNumber, asRecord, asText, pickAll } from "./projection.js";
 
 const CardIdInput = z.object({ id: uuidSchema.describe("ID do cartão.") });
+
+const InvoicesInput = z.object({
+  period: periodSchema,
+  detail: z
+    .enum(["compact", "full"])
+    .default("compact")
+    .describe("compact devolve os itens essenciais; full devolve o objeto completo da API."),
+});
 
 export const cardTools: ReadToolSpec[] = [
   {
@@ -46,14 +55,50 @@ export const cardTools: ReadToolSpec[] = [
     name: "list_invoices",
     title: "Listar faturas do período",
     description:
-      "Lista as faturas de todos os cartões em um mês: total, fechamento, vencimento, pagamentos, ajustes e rateio por pessoa.",
-    inputSchema: z.object({ period: periodSchema }).shape,
+      'Lista as faturas de todos os cartões em um mês: total, fechamento, vencimento, pagamentos, ajustes e rateio por pessoa. Os itens vêm em versão compacta por padrão; use `detail: "full"` para o objeto completo.',
+    inputSchema: InvoicesInput.shape,
     handler: async (input, ctx) => {
-      const args = z.object({ period: periodSchema }).parse(input);
-      return { data: await ctx.client.get("/invoices", { period: args.period }) };
+      const args = InvoicesInput.parse(input);
+      const data = await ctx.client.get<Record<string, unknown>>("/invoices", {
+        period: args.period,
+      });
+
+      if (args.detail === "full") return { data };
+
+      return { data: { ...data, items: asArray(data.items).map(compactInvoice) } };
     },
   },
 ];
+
+function compactInvoice(item: unknown): Record<string, unknown> {
+  const record = asRecord(item);
+
+  return {
+    cardId: asText(record.cardId),
+    accountId: asText(record.accountId),
+    cardName: asText(record.cardName),
+    period: asText(record.period),
+    amount: asNumber(record.amount),
+    paidAmount: asNumber(record.paidAmount),
+    remainingAmount: asNumber(record.remainingAmount),
+    status: asText(record.status),
+    closingDate: asText(record.closingDate),
+    dueDate: asText(record.dueDate),
+    originalDueDate: asText(record.originalDueDate),
+    paymentCount: asNumber(record.paymentCount),
+    latestPayment:
+      record.latestPayment === null || record.latestPayment === undefined
+        ? null
+        : asRecord(record.latestPayment),
+    people: pickAll(record.people, [
+      "personId",
+      "personName",
+      "amount",
+      "paidAmount",
+      "remainingAmount",
+    ]),
+  };
+}
 
 export const cardWriteTools: WriteToolSpec[] = [
   {

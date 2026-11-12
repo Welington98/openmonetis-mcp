@@ -1,36 +1,43 @@
 import { z } from "zod";
 import type { ReadToolSpec, WriteToolSpec } from "../runner.js";
 import { periodSchema, uuidSchema } from "../schemas/common.js";
+import { asArray, asNumber, asRecord, asText } from "./projection.js";
 
 const reportStatuses = ["open", "completed", "all"] as const;
+
+const installmentsInput = z.object({
+  period: periodSchema,
+  status: z.enum(reportStatuses).default("open"),
+  q: z.string().trim().min(1).max(160).optional(),
+  detail: z
+    .enum(["compact", "full"])
+    .default("compact")
+    .describe("compact devolve as séries essenciais; full devolve o objeto completo da API."),
+});
 
 export const installmentTools: ReadToolSpec[] = [
   {
     name: "list_installments",
     title: "Parcelamentos",
     description:
-      "Lista as séries parceladas do usuário no mês: séries abertas/concluídas, parcelas pagas e pendentes, valores e progresso.",
-    inputSchema: z.object({
-      period: periodSchema,
-      status: z.enum(reportStatuses).default("open"),
-      q: z.string().trim().min(1).max(160).optional(),
-    }).shape,
+      'Lista as séries parceladas do usuário no mês: séries abertas/concluídas, parcelas pagas e pendentes, valores e progresso. As séries vêm em versão compacta por padrão; use `detail: "full"` para o objeto completo.',
+    inputSchema: installmentsInput.shape,
     handler: async (input, ctx) => {
-      const args = z
-        .object({
-          period: periodSchema,
-          status: z.enum(reportStatuses).default("open"),
-          q: z.string().trim().min(1).max(160).optional(),
-        })
-        .parse(input);
+      const args = installmentsInput.parse(input);
 
-      const data = await ctx.client.get<{ groups?: unknown[]; summary?: unknown }>(
-        "/reports/installments",
-        { period: args.period, status: args.status, q: args.q },
-      );
-      const groups = Array.isArray(data.groups) ? data.groups.length : 0;
+      const data = await ctx.client.get<Record<string, unknown>>("/reports/installments", {
+        period: args.period,
+        status: args.status,
+        q: args.q,
+      });
+      const groups = asArray(data.groups);
+      const projected =
+        args.detail === "full" ? data : { ...data, groups: groups.map(compactGroup) };
 
-      return { data, summary: `${groups} série(s) parcelada(s) em ${args.period}.` };
+      return {
+        data: projected,
+        summary: `${groups.length} série(s) parcelada(s) em ${args.period}.`,
+      };
     },
   },
   {
@@ -50,6 +57,57 @@ export const installmentTools: ReadToolSpec[] = [
     },
   },
 ];
+
+function compactGroup(item: unknown): Record<string, unknown> {
+  const record = asRecord(item);
+
+  return {
+    seriesId: asText(record.seriesId),
+    name: asText(record.name),
+    paymentMethod: asText(record.paymentMethod),
+    originalAmount: asNumber(record.originalAmount),
+    totalInstallments: asNumber(record.totalInstallments),
+    trackedFromInstallment: asNumber(record.trackedFromInstallment),
+    trackedInstallmentCount: asNumber(record.trackedInstallmentCount),
+    untrackedInstallmentCount: asNumber(record.untrackedInstallmentCount),
+    scheduledInstallmentCount: asNumber(record.scheduledInstallmentCount),
+    missingInstallmentCount: asNumber(record.missingInstallmentCount),
+    paidInstallmentCount: asNumber(record.paidInstallmentCount),
+    pendingInstallmentCount: asNumber(record.pendingInstallmentCount),
+    trackedAmount: asNumber(record.trackedAmount),
+    paidAmount: asNumber(record.paidAmount),
+    pendingAmount: asNumber(record.pendingAmount),
+    progressPercentage: asNumber(record.progressPercentage),
+    nextDueDate: asText(record.nextDueDate),
+    nextPeriod: asText(record.nextPeriod),
+    endPeriod: asText(record.endPeriod),
+    status: asText(record.status),
+    personId: asText(record.personId),
+    personName: asText(record.personName),
+    categoryId: asText(record.categoryId),
+    categoryName: asText(record.categoryName),
+    cardId: asText(record.cardId),
+    cardName: asText(record.cardName),
+    accountId: asText(record.accountId),
+    accountName: asText(record.accountName),
+    installments: asArray(record.installments).map(compactInstallment),
+  };
+}
+
+function compactInstallment(item: unknown): Record<string, unknown> {
+  const record = asRecord(item);
+
+  return {
+    id: asText(record.id),
+    installmentNumber: asNumber(record.installmentNumber),
+    period: asText(record.period),
+    purchaseDate: asText(record.purchaseDate),
+    amount: asNumber(record.amount),
+    dueDate: asText(record.dueDate),
+    status: asText(record.status),
+    isDueInReferencePeriod: record.isDueInReferencePeriod === true,
+  };
+}
 
 export const installmentWriteTools: WriteToolSpec[] = [
   {
