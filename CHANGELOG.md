@@ -5,6 +5,12 @@ Todas as mudanças notáveis deste projeto são registradas aqui, seguindo
 [SemVer](https://semver.org/lang/pt-BR/). O conteúdo de cada versão é gerado a partir dos commits
 [Conventional Commits](https://www.conventionalcommits.org/pt-br/).
 
+## [0.2.0](https://github.com/Welington98/openmonetis-mcp/compare/v0.1.1...v0.2.0) (2026-11-12)
+
+### Features
+
+* cobrir inbox, importação, anexos, parcelamentos, pessoas e IA ([5e87847](https://github.com/Welington98/openmonetis-mcp/commit/5e878476de98639baea01e7a17fe7f7bcb0aca4c))
+
 ## [0.1.1](https://github.com/Welington98/openmonetis-mcp/compare/v0.1.0...v0.1.1) (2026-11-11)
 
 ### Bug Fixes
