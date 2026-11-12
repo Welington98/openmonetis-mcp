@@ -641,7 +641,25 @@ e commite o diff.
 
 ## Contribuindo
 
-Issues e PRs são bem-vindos. Antes de abrir PR: `pnpm check` verde e `CHANGELOG.md` atualizado.
+A `main` é protegida: toda mudança entra por pull request com os checks `check` (CI) e `e2e`
+verdes. O release e o commit `chore(release)` são gerados pelo semantic-release após o merge.
+
+```bash
+git switch -c feat/minha-mudanca
+# ... commits em Conventional Commits ...
+pnpm check            # lint + typecheck + test + build
+git push -u origin feat/minha-mudanca
+gh pr create --fill
+```
+
+Regras do fluxo:
+
+- Um PR = um assunto. Título em Conventional Commits, porque é ele que define a versão no squash.
+- Mudou endpoint ou schema? Rode `pnpm gen:contract` e commite `contract/` no mesmo PR — o job
+  `e2e` falha se o contrato divergir da API.
+- Nova ferramenta de escrita precisa de `plan()` com dry-run legível; sem isso o revisor humano não
+  consegue avaliar o que o agente faria.
+- Nunca inclua credenciais. Use `openmonetis-mcp auth set` localmente, nunca no repositório.
 
 ## Licença
 

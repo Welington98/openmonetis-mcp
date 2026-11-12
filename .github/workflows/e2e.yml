@@ -21,7 +21,7 @@ env:
   OPENMONETIS_CREDENTIAL_STORE: none
 
 jobs:
-  api:
+  e2e:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
