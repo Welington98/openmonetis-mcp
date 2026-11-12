@@ -5,6 +5,12 @@ Todas as mudanças notáveis deste projeto são registradas aqui, seguindo
 [SemVer](https://semver.org/lang/pt-BR/). O conteúdo de cada versão é gerado a partir dos commits
 [Conventional Commits](https://www.conventionalcommits.org/pt-br/).
 
+## [0.3.0](https://github.com/Welington98/openmonetis-mcp/compare/v0.2.0...v0.3.0) (2026-11-12)
+
+### Features
+
+* cofre de credenciais, contrato gerado e E2E no CI ([d3a1cca](https://github.com/Welington98/openmonetis-mcp/commit/d3a1cca49a56742918f463d7e2558f9767b2d2fc))
+
 ## [0.2.0](https://github.com/Welington98/openmonetis-mcp/compare/v0.1.1...v0.2.0) (2026-11-12)
 
 ### Features
