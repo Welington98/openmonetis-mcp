@@ -194,14 +194,21 @@ describe("ApiClient", () => {
 
 describe("loadConfig", () => {
   it("usa o modo confirm por padrão", () => {
-    const config = loadConfig({ OPENMONETIS_URL: "http://localhost:7001" });
+    const config = loadConfig({
+      OPENMONETIS_URL: "http://localhost:7001",
+      OPENMONETIS_CREDENTIAL_STORE: "none",
+    });
     assert.equal(config.writes, "confirm");
     assert.equal(config.baseUrl, "http://localhost:7001");
   });
 
   it("rejeita http remoto sem opt-in explícito", () => {
     assert.throws(
-      () => loadConfig({ OPENMONETIS_URL: "http://example.com" }),
+      () =>
+        loadConfig({
+          OPENMONETIS_URL: "http://example.com",
+          OPENMONETIS_CREDENTIAL_STORE: "none",
+        }),
       /http:\/\/ para um host remoto/,
     );
   });

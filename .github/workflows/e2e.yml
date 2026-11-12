@@ -1,0 +1,104 @@
+name: e2e
+
+# Sobe uma instância real do OpenMonetis (imagens oficiais) em Postgres descartável e roda as 75
+# ferramentas contra ela. Também falha se o contrato versionado divergir da API usada.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPENMONETIS_VERSION: "0.16.0"
+  OPENMONETIS_URL: http://localhost:7001
+  OPENMONETIS_EMAIL: e2e@openmonetis.local
+  OPENMONETIS_PASSWORD: e2e-password-123
+  OPENMONETIS_ORIGIN: http://localhost:7001
+  OPENMONETIS_CREDENTIAL_STORE: none
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Rede e Postgres descartáveis
+        run: |
+          set -euo pipefail
+          scheme="postgres"; user="postgres"; pass="postgres"; host="e2e-db"; port="5432"; db="openmonetis"
+
+          docker network create e2e-net
+          docker run -d --name e2e-db --network e2e-net \
+            -e POSTGRES_PASSWORD="$pass" -e POSTGRES_DB="$db" postgres:16-bookworm
+
+          for _ in $(seq 1 30); do
+            if docker exec e2e-db pg_isready -U "$user" >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec e2e-db pg_isready -U "$user"
+
+          echo "DATABASE_URL=${scheme}://${user}:${pass}@${host}:${port}/${db}" >> "$GITHUB_ENV"
+
+      - name: Migrações
+        run: |
+          docker run --rm --network e2e-net -e DATABASE_URL="$DATABASE_URL" \
+            "ghcr.io/felipegcoutinho/openmonetis-migrator:${OPENMONETIS_VERSION}"
+
+      - name: API
+        run: |
+          docker run -d --name e2e-api --network e2e-net -p 7001:7001 \
+            -e NODE_ENV=production \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -e BETTER_AUTH_SECRET="$(openssl rand -hex 32)" \
+            -e BETTER_AUTH_URL="$OPENMONETIS_ORIGIN" \
+            -e WEB_URL="$OPENMONETIS_ORIGIN" \
+            -e CORS_ORIGIN="$OPENMONETIS_ORIGIN" \
+            -e DEVICE_TOKEN_SECRET="$(openssl rand -hex 32)" \
+            -e PERSON_CONNECTION_SECRET="$(openssl rand -hex 32)" \
+            "ghcr.io/felipegcoutinho/openmonetis-api:${OPENMONETIS_VERSION}"
+
+          for _ in $(seq 1 60); do
+            if curl -fsS http://localhost:7001/api/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:7001/api/health
+
+      - name: Conta e dados de demonstração
+        run: |
+          curl -fsS -X POST http://localhost:7001/api/auth/sign-up/email \
+            -H 'content-type: application/json' -H "origin: $OPENMONETIS_ORIGIN" \
+            -d "{\"email\":\"$OPENMONETIS_EMAIL\",\"password\":\"$OPENMONETIS_PASSWORD\",\"name\":\"E2E\"}"
+
+          start_period="$(date -u -d '-5 months' +%Y-%m)"
+          docker exec e2e-api node --import tsx src/scripts/mock-data.ts \
+            --email="$OPENMONETIS_EMAIL" --startPeriod="$start_period" --months=6
+
+      - name: Contrato (drift)
+        run: |
+          pnpm gen:contract
+          if ! git diff --quiet -- contract/; then
+            echo "::error::contract/ divergiu da API ${OPENMONETIS_VERSION}. Rode pnpm gen:contract e commite."
+            git diff --stat -- contract/
+            exit 1
+          fi
+          pnpm check:contract
+
+      - name: Ferramentas (smoke com escrita)
+        run: SMOKE_WRITES=1 pnpm smoke:live
+
+      - name: Logs da API em caso de falha
+        if: failure()
+        run: docker logs e2e-api || true

@@ -31,7 +31,8 @@
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "prepare": "node scripts/prepare.mjs",
     "check:contract": "tsx scripts/check-contract.ts",
-    "smoke:live": "tsx scripts/smoke-live.ts"
+    "smoke:live": "tsx scripts/smoke-live.ts",
+    "gen:contract": "tsx scripts/gen-contract.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.23.0",
@@ -47,6 +48,7 @@
     "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/node": "^22.18.9",
     "conventional-changelog-conventionalcommits": "^8.0.0",
+    "openapi-typescript": "^7.13.0",
     "semantic-release": "^25.0.9",
     "tsup": "^8.5.0",
     "tsx": "^4.20.6",

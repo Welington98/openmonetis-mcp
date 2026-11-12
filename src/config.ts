@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { ConfigError } from "./client/errors.js";
+import { readStoredCredentials } from "./credentials/store.js";
 
 export type WriteMode = "read-only" | "confirm" | "full";
 
@@ -58,6 +59,10 @@ function parseWriteMode(value: string | undefined): WriteMode {
 function isLoopback(hostname: string): boolean {
   const host = hostname.toLowerCase();
   return host === "localhost" || host === "::1" || host === "[::1]" || host.startsWith("127.");
+}
+
+export function normalizeBaseUrl(value: string | undefined): string {
+  return parseBaseUrl(value, false);
 }
 
 function parseBaseUrl(value: string | undefined, allowInsecure: boolean): string {
@@ -132,13 +137,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const cookieEnvName = ["OPENMONETIS", "COOKIE"].join("_");
-  const baseUrl = parseBaseUrl(env.OPENMONETIS_URL, allowInsecure);
   const exportDirEnvName = ["OPENMONETIS", "EXPORT_DIR"].join("_");
+
+  // Cofre local só entra quando não há credencial no ambiente.
+  const stored = readStoredCredentials(env);
+  const baseUrl = parseBaseUrl(env.OPENMONETIS_URL ?? stored?.baseUrl, allowInsecure);
+  const auth =
+    parseAuth(env) ?? (stored ? { email: stored.email, secret: stored.secret } : undefined);
 
   return {
     baseUrl,
     exportDir: read(env[exportDirEnvName]) ?? join(homedir(), defaultExportFolder),
-    auth: parseAuth(env),
+    auth,
     sessionCookie: read(env[cookieEnvName]),
     origin: read(env.OPENMONETIS_ORIGIN) ?? new URL(baseUrl).origin,
     writes: parseWriteMode(env.OPENMONETIS_MCP_WRITES),

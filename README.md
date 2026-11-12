@@ -36,6 +36,44 @@ pnpm build
 node dist/index.js
 ```
 
+## Cofre de credenciais (recomendado)
+
+Em vez de espalhar e-mail e senha no JSON de cada cliente MCP, guarde-os uma vez no cofre local:
+
+```bash
+npx -y github:Welington98/openmonetis-mcp auth set
+# URL do OpenMonetis: https://financas.exemplo.com/api-proxy
+# E-mail: voce@exemplo.com
+# Credencial de voce@exemplo.com (não será exibida): ********
+# Login validado. Guardado em: Keychain do macOS.
+```
+
+O login é **validado antes de salvar** — se a credencial estiver errada, nada é gravado.
+
+| Comando | O que faz |
+| --- | --- |
+| `auth set` | Valida o login e grava URL, e-mail e credencial |
+| `auth set --url=... --email=... --password-stdin` | Modo não-interativo (systemd, Docker, CI): lê o segredo do stdin |
+| `auth status` | Mostra o cofre em uso e a origem efetiva das credenciais, sem revelar o segredo |
+| `auth clear` | Remove o que está guardado |
+
+Onde fica:
+
+| Plataforma | Backend |
+| --- | --- |
+| macOS | Keychain (`security`) |
+| Linux | `secret-tool` (libsecret) |
+| Fallback | `~/.config/openmonetis-mcp/credentials.json` com permissão `0600` |
+
+Precedência: `OPENMONETIS_EMAIL`/`OPENMONETIS_PASSWORD` do ambiente **sempre ganham** do cofre. Com o
+cofre preenchido, os exemplos de cliente abaixo podem omitir essas duas variáveis.
+
+```bash
+# provisionamento sem interação
+printf '%s' "$SENHA" | openmonetis-mcp auth set \
+  --url=https://financas.exemplo.com/api-proxy --email=voce@exemplo.com --password-stdin
+```
+
 ## Configuração
 
 Copie `.env.example` para `.env` e preencha pelo menos `OPENMONETIS_URL` e as credenciais.
@@ -50,6 +88,8 @@ Copie `.env.example` para `.env` e preencha pelo menos `OPENMONETIS_URL` e as cr
 | `OPENMONETIS_MCP_WRITES` | não | `confirm` | `read-only`, `confirm` (dry-run) ou `full`. |
 | `OPENMONETIS_TIMEOUT_MS` | não | `20000` | Timeout por chamada à API. |
 | `OPENMONETIS_EXPORT_DIR` | não | `~/Downloads/openmonetis-mcp` | Diretório onde exportações e modelos de importação são gravados. |
+| `OPENMONETIS_CREDENTIAL_STORE` | não | `keychain`/`secret-tool`/`file` | Força o backend do cofre: `keychain`, `secret-tool`, `file` ou `none`. |
+| `OPENMONETIS_CONFIG_DIR` | não | `~/.config/openmonetis-mcp` | Diretório do cofre quando o backend é arquivo. |
 | `OPENMONETIS_ALLOW_INSECURE` | não | — | `1` libera `http://` para host remoto. Evite. |
 | `OPENMONETIS_MCP_HTTP_HOST` | não | `127.0.0.1` | Host do transporte HTTP. |
 | `OPENMONETIS_MCP_HTTP_PORT` | não | `7317` | Porta do transporte HTTP. |
@@ -556,12 +596,26 @@ pnpm test         # node:test com API fake local
 pnpm build        # tsup → dist/
 pnpm check        # lint + typecheck + test + build
 
-# valida todos os endpoints usados contra uma instância viva
-OPENMONETIS_URL=http://localhost:7002/api-proxy pnpm check:contract
+# contrato: gera tipos + snapshot a partir da instância e valida as rotas usadas
+OPENMONETIS_URL=http://localhost:7002/api-proxy pnpm gen:contract
+pnpm check:contract                                  # offline, contra contract/
+OPENMONETIS_URL=http://localhost:7002/api-proxy pnpm check:contract   # + instância viva
 ```
 
-Os testes sobem uma API fake em `127.0.0.1` (sem rede externa) e exercitam login, renovação de
-sessão, envelope de erro, paginação, dry-run e o gate de escrita.
+Os testes unitários sobem uma API fake em `127.0.0.1` (sem rede externa) e exercitam login,
+renovação de sessão, envelope de erro, paginação, dry-run, gate de escrita e o cofre de credenciais.
+
+O workflow **`e2e`** vai além: em cada push/PR ele sobe Postgres + migrações + a imagem oficial da API,
+cria uma conta, popula 6 meses de dados e roda as 75 ferramentas de verdade (`SMOKE_WRITES=1`), além
+de falhar se `contract/` divergir do `/openapi.json` da versão usada. É o que pega mudanças de
+contrato antes de chegarem ao usuário.
+
+### Contrato
+
+`contract/openapi.snapshot.json` (especificação) e `contract/openapi.d.ts` (tipos) são gerados por
+`pnpm gen:contract` e versionados. A lista de rotas em `scripts/check-contract.ts` é tipada por eles:
+um path ou método que deixe de existir **quebra o `tsc`**. Quando a API mudar, rode `pnpm gen:contract`
+e commite o diff.
 
 ## Troubleshooting
 
