@@ -123,6 +123,129 @@ args = ["-y", "github:Welington98/openmonetis-mcp"]
 env = { OPENMONETIS_URL = "https://financas.exemplo.com/api-proxy", OPENMONETIS_EMAIL = "voce@exemplo.com", OPENMONETIS_PASSWORD = "sua-senha" }
 ```
 
+### Hermes Agent (Nous Research)
+
+O [Hermes Agent](https://hermes-agent.nousresearch.com/) tem suporte nativo a MCP e normalmente roda
+em container, então o caminho recomendado é **HTTP**, não `stdio`. Coloque o MCP na mesma rede
+Docker do Hermes e aponte a URL para o nome do serviço.
+
+**1. Serviço no mesmo `docker-compose.yml` do Hermes**
+
+```yaml
+services:
+  openmonetis-mcp:
+    image: ghcr.io/welington98/openmonetis-mcp:0.2.0
+    restart: unless-stopped
+    environment:
+      # OpenMonetis na mesma máquina do host Docker:
+      OPENMONETIS_URL: http://host.docker.internal:7002/api-proxy
+      OPENMONETIS_ALLOW_INSECURE: "1"
+      OPENMONETIS_ORIGIN: http://localhost:7002
+      OPENMONETIS_EMAIL: demo@openmonetis.local
+      OPENMONETIS_PASSWORD: demo2026
+      OPENMONETIS_MCP_HTTP_HOST: 0.0.0.0
+      MCP_HTTP_TOKEN: ${OPENMONETIS_MCP_TOKEN}
+      # Exportações e uploads precisam de volume próprio (ver "Arquivos locais")
+      OPENMONETIS_EXPORT_DIR: /data/exports
+    volumes:
+      - ./openmonetis-exports:/data/exports
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+Se o OpenMonetis for público em HTTPS, use `OPENMONETIS_URL: https://seu-dominio/api-proxy` e remova
+`OPENMONETIS_ALLOW_INSECURE` e `OPENMONETIS_ORIGIN`.
+
+**2. Token** no `.env` do projeto do Hermes
+
+```bash
+OPENMONETIS_MCP_TOKEN=$(openssl rand -hex 32)
+```
+
+**3. `hermes-data/config.yaml`**
+
+```yaml
+mcp_servers:
+  openmonetis:
+    url: "http://openmonetis-mcp:7317/mcp"
+    headers:
+      Authorization: "Bearer ${OPENMONETIS_MCP_TOKEN}"
+    timeout: 120          # export, importação e diagnóstico podem passar dos 20s padrão
+    lazy: true            # registra as ferramentas pelo cache e conecta no primeiro uso
+    tools:
+      include:
+        - get_dashboard_overview
+        - get_dashboard_attention
+        - list_transactions
+        - get_transaction
+        - list_accounts
+        - list_bills
+        - list_invoices
+        - list_budgets
+        - list_goals
+        - list_categories
+        - list_people
+        - get_financial_distribution
+        - get_category_trends
+        - list_commitments
+        - create_transaction
+        - settle_transactions
+        - export_transactions
+```
+
+`${OPENMONETIS_MCP_TOKEN}` é resolvido por Hermes a partir de `~/.hermes/.env`; no container, esse
+arquivo fica em `hermes-data/.env`.
+
+**4. Aplicar e verificar**
+
+```bash
+hermes mcp test openmonetis     # testa conexão e lista as ferramentas
+# em uma sessão aberta:
+/reload-mcp
+```
+
+O Hermes registra cada ferramenta com o prefixo do servidor: `list_transactions` aparece como
+`mcp_openmonetis_list_transactions`. O `hermes gateway run` também recarrega sozinho quando o
+`config.yaml` muda (cerca de um minuto).
+
+**Escolha do filtro de ferramentas**
+
+| Estratégia | Config | Quando usar |
+| --- | --- | --- |
+| Whitelist (acima) | `tools.include` | Uso diário: menos schema por chamada, menos ruído |
+| Tudo liberado | omita `tools` | Exploração: as 75 ferramentas disponíveis |
+| Tudo menos destrutivas | `tools.exclude` | Cobertura ampla sem `delete_*`/`revoke_*` |
+
+```yaml
+    tools:
+      exclude:
+        - delete_transaction
+        - delete_attachment
+        - delete_inbox_rule
+        - delete_import_batch
+        - revoke_person_connection
+        - delete_person_settlement
+        - delete_ai_chat
+        - undo_installment_anticipation
+```
+
+Mantenha `OPENMONETIS_MCP_WRITES=confirm` (padrão): o agente recebe dry-run e só aplica com
+`confirm: true`, o que combina com a aprovação de comandos do Hermes.
+
+**Se o Hermes estiver fora do Docker** (CLI/desktop nativo), use `stdio` como em qualquer cliente:
+
+```yaml
+mcp_servers:
+  openmonetis:
+    command: "npx"
+    args: ["-y", "github:Welington98/openmonetis-mcp"]
+    env:
+      OPENMONETIS_URL: "http://localhost:7002/api-proxy"
+      OPENMONETIS_EMAIL: "demo@openmonetis.local"
+      OPENMONETIS_PASSWORD: "demo2026"
+      OPENMONETIS_ORIGIN: "http://localhost:7002"
+```
+
 ### Transporte HTTP
 
 ```bash
@@ -385,7 +508,8 @@ isso a primeira tag (`v0.1.0`) precisa existir antes de automatizar.
 ### Arquivos locais
 
 `export_transactions`, `get_import_template` e `upload_attachment` leem/gravam **no host onde o MCP
-roda** — no transporte `stdio` é a sua máquina; no modo HTTP é o container. Nesse caso, monte um
+roda** — no transporte `stdio` é a sua máquina; no modo HTTP é o container (por isso o volume em
+`compose.yaml` e no exemplo do Hermes). Nesse caso, monte um
 volume para o diretório de exportação:
 
 ```yaml
