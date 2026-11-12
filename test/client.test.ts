@@ -15,6 +15,9 @@ function makeConfig(baseUrl: string, overrides: Partial<Config> = {}): Config {
     writes: "confirm",
     timeoutMs: 5_000,
     maxResponseBytes: 65_536,
+    cacheTtlMs: 30_000,
+    retryAttempts: 2,
+    tools: "full",
     debug: false,
     http: { host: "127.0.0.1", port: 7317 },
     ...overrides,
@@ -194,6 +197,199 @@ describe("ApiClient", () => {
   });
 });
 
+describe("cache e retry", () => {
+  let api: FakeApi;
+
+  before(async () => {
+    api = await FakeApi.start();
+  });
+
+  after(async () => {
+    await api.close();
+  });
+
+  it("serve GET repetido do cache sem nova requisição", async () => {
+    let calls = 0;
+    api.on("GET", "/cache-hit", () => {
+      calls += 1;
+      return { body: { data: { calls }, error: null } };
+    });
+
+    const config = makeConfig(api.url);
+    const client = new ApiClient(config, new SessionManager(config));
+
+    const first = await client.get<{ calls: number }>("/cache-hit");
+    const second = await client.get<{ calls: number }>("/cache-hit");
+
+    assert.equal(first.calls, 1);
+    assert.equal(second.calls, 1, "o segundo GET deve vir do cache");
+    assert.equal(calls, 1);
+    assert.equal(api.received("GET", "/cache-hit").length, 1);
+  });
+
+  it("expira a entrada depois do TTL", async () => {
+    let calls = 0;
+    api.on("GET", "/cache-ttl", () => {
+      calls += 1;
+      return { body: { data: { calls }, error: null } };
+    });
+
+    const config = makeConfig(api.url, { cacheTtlMs: 20 });
+    const client = new ApiClient(config, new SessionManager(config));
+
+    await client.get("/cache-ttl");
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await client.get("/cache-ttl");
+
+    assert.equal(calls, 2, "após o TTL a API deve ser consultada de novo");
+  });
+
+  it("com TTL 0 desliga o cache", async () => {
+    let calls = 0;
+    api.on("GET", "/cache-off", () => {
+      calls += 1;
+      return { body: { data: { calls }, error: null } };
+    });
+
+    const config = makeConfig(api.url, { cacheTtlMs: 0 });
+    const client = new ApiClient(config, new SessionManager(config));
+
+    await client.get("/cache-off");
+    await client.get("/cache-off");
+
+    assert.equal(calls, 2);
+  });
+
+  it("compartilha a mesma Promise em GETs concorrentes (single-flight)", async () => {
+    let calls = 0;
+    api.on("GET", "/cache-flight", async () => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return { body: { data: { calls }, error: null } };
+    });
+
+    const config = makeConfig(api.url);
+    const client = new ApiClient(config, new SessionManager(config));
+
+    const [first, second] = await Promise.all([
+      client.get<{ calls: number }>("/cache-flight"),
+      client.get<{ calls: number }>("/cache-flight"),
+    ]);
+
+    assert.equal(calls, 1, "só uma requisição deve ser disparada");
+    assert.equal(first.calls, 1);
+    assert.equal(second.calls, 1);
+  });
+
+  it("invalida o cache do recurso escrito e preserva os demais", async () => {
+    let invoiceCalls = 0;
+    let otherCalls = 0;
+    api.on("GET", "/bills", () => {
+      invoiceCalls += 1;
+      return { body: { data: { items: [], totalOpen: 0 }, error: null } };
+    });
+    api.on("GET", "/budgets", () => {
+      otherCalls += 1;
+      return { body: { data: [], error: null } };
+    });
+    api.on("POST", "/bills/2026-07/payments", () => ({
+      status: 201,
+      body: { data: { ok: true }, error: null },
+    }));
+
+    const config = makeConfig(api.url);
+    const client = new ApiClient(config, new SessionManager(config));
+
+    await client.get("/bills", { period: "2026-07" });
+    await client.get("/budgets", { period: "2026-07" });
+    await client.request("POST", "/bills/2026-07/payments", { body: {} });
+
+    await client.get("/bills", { period: "2026-07" });
+    await client.get("/budgets", { period: "2026-07" });
+
+    assert.equal(invoiceCalls, 2, "escrita em /bills deve invalidar o cache de /bills");
+    assert.equal(otherCalls, 1, "escrita em /bills não deve invalidar /budgets");
+  });
+
+  it("não cacheia respostas de erro", async () => {
+    let calls = 0;
+    api.on("GET", "/cache-error", () => {
+      calls += 1;
+      return { status: 500, body: { message: "boom" } };
+    });
+
+    const config = makeConfig(api.url, { retryAttempts: 0 });
+    const client = new ApiClient(config, new SessionManager(config));
+
+    await assert.rejects(() => client.get("/cache-error"));
+
+    api.on("GET", "/cache-error", () => {
+      calls += 1;
+      return { body: { data: { ok: true }, error: null } };
+    });
+
+    const data = await client.get<{ ok: boolean }>("/cache-error");
+
+    assert.equal(data.ok, true);
+    assert.equal(calls, 2);
+  });
+
+  it("repete 503 até obter sucesso", async () => {
+    let calls = 0;
+    api.on("GET", "/retry-503", () => {
+      calls += 1;
+      if (calls < 3) return { status: 503, body: { message: "indisponível" } };
+      return { body: { data: { ok: true }, error: null } };
+    });
+
+    const config = makeConfig(api.url, { retryAttempts: 2 });
+    const client = new ApiClient(config, new SessionManager(config));
+
+    const data = await client.get<{ ok: boolean }>("/retry-503");
+
+    assert.equal(data.ok, true);
+    assert.equal(calls, 3, "503, 503 e 200");
+  });
+
+  it("não repete 404", async () => {
+    const config = makeConfig(api.url, { retryAttempts: 2 });
+    const client = new ApiClient(config, new SessionManager(config));
+
+    await assert.rejects(() => client.get("/nao-existe-retry"));
+
+    assert.equal(api.received("GET", "/nao-existe-retry").length, 1);
+  });
+
+  it("não repete escrita, mesmo em 503", async () => {
+    let calls = 0;
+    api.on("POST", "/retry-write", () => {
+      calls += 1;
+      return { status: 503, body: { message: "indisponível" } };
+    });
+
+    const config = makeConfig(api.url, { retryAttempts: 2 });
+    const client = new ApiClient(config, new SessionManager(config));
+
+    await assert.rejects(() => client.request("POST", "/retry-write", { body: {} }));
+
+    assert.equal(calls, 1);
+  });
+
+  it("respeita retryAttempts 0", async () => {
+    let calls = 0;
+    api.on("GET", "/retry-off", () => {
+      calls += 1;
+      return { status: 503, body: { message: "indisponível" } };
+    });
+
+    const config = makeConfig(api.url, { retryAttempts: 0 });
+    const client = new ApiClient(config, new SessionManager(config));
+
+    await assert.rejects(() => client.get("/retry-off"));
+    assert.equal(calls, 1);
+  });
+});
+
 describe("loadConfig", () => {
   it("usa o modo confirm por padrão", () => {
     const config = loadConfig({
@@ -217,5 +413,57 @@ describe("loadConfig", () => {
 
   it("exige token quando o servidor HTTP não é loopback", () => {
     assert.throws(() => loadConfig({ OPENMONETIS_MCP_HTTP_HOST: "0.0.0.0" }), /MCP_HTTP_TOKEN/);
+  });
+
+  it("usa cache, retry e catálogo padrão", () => {
+    const config = loadConfig({
+      OPENMONETIS_URL: "http://localhost:7001",
+      OPENMONETIS_CREDENTIAL_STORE: "none",
+    });
+
+    assert.equal(config.cacheTtlMs, 30_000);
+    assert.equal(config.retryAttempts, 2);
+    assert.equal(config.tools, "full");
+  });
+
+  it("aceita cache, retry e perfil core configurados", () => {
+    const config = loadConfig({
+      OPENMONETIS_URL: "http://localhost:7001",
+      OPENMONETIS_CREDENTIAL_STORE: "none",
+      OPENMONETIS_MCP_CACHE_TTL_MS: "0",
+      OPENMONETIS_MCP_RETRY_ATTEMPTS: "5",
+      OPENMONETIS_MCP_TOOLS: "core",
+    });
+
+    assert.equal(config.cacheTtlMs, 0);
+    assert.equal(config.retryAttempts, 5);
+    assert.equal(config.tools, "core");
+  });
+
+  it("rejeita cache, retry e perfil inválidos", () => {
+    assert.throws(
+      () =>
+        loadConfig({
+          OPENMONETIS_MCP_CACHE_TTL_MS: "-1",
+          OPENMONETIS_CREDENTIAL_STORE: "none",
+        }),
+      /OPENMONETIS_MCP_CACHE_TTL_MS/,
+    );
+    assert.throws(
+      () =>
+        loadConfig({
+          OPENMONETIS_MCP_RETRY_ATTEMPTS: "6",
+          OPENMONETIS_CREDENTIAL_STORE: "none",
+        }),
+      /OPENMONETIS_MCP_RETRY_ATTEMPTS/,
+    );
+    assert.throws(
+      () =>
+        loadConfig({
+          OPENMONETIS_MCP_TOOLS: "turbo",
+          OPENMONETIS_CREDENTIAL_STORE: "none",
+        }),
+      /OPENMONETIS_MCP_TOOLS/,
+    );
   });
 });

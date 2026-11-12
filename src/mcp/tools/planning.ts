@@ -2,9 +2,18 @@ import { z } from "zod";
 import { InputError } from "../../client/errors.js";
 import type { ReadToolSpec, WriteToolSpec } from "../runner.js";
 import { periodSchema, uuidSchema } from "../schemas/common.js";
+import { asArray, asNumber, asRecord, asText, pickAll } from "./projection.js";
 
 const periodInput = z.object({
   period: periodSchema.describe("Mês de referência no formato YYYY-MM."),
+});
+
+const billsInput = z.object({
+  period: periodSchema.describe("Mês de referência no formato YYYY-MM."),
+  detail: z
+    .enum(["compact", "full"])
+    .default("compact")
+    .describe("compact devolve os itens essenciais; full devolve o objeto completo da API."),
 });
 
 const goalStatuses = ["active", "paused", "completed", "archived"] as const;
@@ -14,18 +23,19 @@ export const planningTools: ReadToolSpec[] = [
     name: "list_bills",
     title: "Listar contas a pagar",
     description:
-      "Lista as contas a pagar de um mês com total em aberto, quantidade de vencidas, contas de origem e itens (com rateio por pessoa, vencimento e status).",
-    inputSchema: periodInput.shape,
+      'Lista as contas a pagar de um mês com total em aberto, quantidade de vencidas, contas de origem e itens (com rateio por pessoa, vencimento e status). Os itens vêm em versão compacta por padrão; use `detail: "full"` para o objeto completo.',
+    inputSchema: billsInput.shape,
     handler: async (input, ctx) => {
-      const args = periodInput.parse(input);
+      const args = billsInput.parse(input);
       const data = await ctx.client.get<Record<string, unknown>>("/bills", {
         period: args.period,
       });
-      const items = Array.isArray(data.items) ? data.items.length : 0;
+      const items = asArray(data.items);
+      const projected = args.detail === "full" ? data : { ...data, items: items.map(compactBill) };
 
       return {
-        data,
-        summary: `Contas a pagar de ${args.period}: ${items} item(ns), aberto ${formatMoney(data.totalOpen)}.`,
+        data: projected,
+        summary: `Contas a pagar de ${args.period}: ${items.length} item(ns), aberto ${formatMoney(data.totalOpen)}.`,
       };
     },
   },
@@ -191,6 +201,34 @@ export const planningWriteTools: WriteToolSpec[] = [
   },
 ];
 
+function compactBill(item: unknown): Record<string, unknown> {
+  const record = asRecord(item);
+
+  return {
+    id: asText(record.id),
+    recordId: asText(record.recordId),
+    name: asText(record.name),
+    period: asText(record.period),
+    purchaseDate: asText(record.purchaseDate),
+    dueDate: asText(record.dueDate),
+    originalDueDate: asText(record.originalDueDate),
+    boletoPaymentDate: asText(record.boletoPaymentDate),
+    amount: asNumber(record.amount),
+    paymentMethod: asText(record.paymentMethod),
+    condition: asText(record.condition),
+    status: asText(record.status),
+    isSettled: record.isSettled === true,
+    settledDate: asText(record.settledDate),
+    currentInstallment: asNumber(record.currentInstallment),
+    installmentCount: asNumber(record.installmentCount),
+    recurrenceFrequency: asText(record.recurrenceFrequency),
+    accountId: asText(record.accountId),
+    accountName: asText(record.accountName),
+    categoryName: asText(record.categoryName),
+    people: pickAll(record.people, ["personId", "personName", "amount"]),
+  };
+}
+
 function formatMoney(value: unknown): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
 
@@ -198,10 +236,4 @@ function formatMoney(value: unknown): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
 }

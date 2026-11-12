@@ -6,7 +6,7 @@ OpenMonetis — sem acesso direto ao banco e sem duplicar regra de negócio.
 
 - **Cliente HTTP puro** da API pública do OpenMonetis (`/openapi.json` é o contrato).
 - **Autenticação** por sessão Better Auth (`email` + `senha`), com renovação automática em `401`.
-- **75 ferramentas** de leitura e escrita, com *dry-run* obrigatório nas alterações.
+- **75 ferramentas** de leitura e escrita, com *dry-run* obrigatório nas alterações (14 no perfil `core`).
 - **Dois transportes**: `stdio` (local) e Streamable HTTP (remoto, protegido por bearer token).
 
 ## Como funciona
@@ -88,6 +88,9 @@ Copie `.env.example` para `.env` e preencha pelo menos `OPENMONETIS_URL` e as cr
 | `OPENMONETIS_MCP_WRITES` | não | `confirm` | `read-only`, `confirm` (dry-run) ou `full`. |
 | `OPENMONETIS_TIMEOUT_MS` | não | `20000` | Timeout por chamada à API. |
 | `OPENMONETIS_MCP_MAX_RESPONSE_BYTES` | não | `65536` | Teto do JSON devolvido por ferramenta. Acima disso, listas são cortadas com `truncated: true`. `0` desliga. |
+| `OPENMONETIS_MCP_CACHE_TTL_MS` | não | `30000` | TTL do cache de leituras (GET). GETs idênticos no intervalo reaproveitam a resposta e chamadas concorrentes compartilham a requisição. Escritas invalidam o recurso alterado. `0` desliga. |
+| `OPENMONETIS_MCP_RETRY_ATTEMPTS` | não | `2` | Tentativas extras em leituras após `429`/`5xx` ou erro de rede, com backoff exponencial e jitter (respeita `Retry-After`, teto de 2 s). Escritas nunca são repetidas. `0`–`5`. |
+| `OPENMONETIS_MCP_TOOLS` | não | `full` | Perfil do catálogo: `full` (75 ferramentas) ou `core` (14 de leitura essencial). |
 | `OPENMONETIS_MCP_DEBUG` | não | — | `1` loga uma linha JSONL por chamada de ferramenta em stderr (`tool`, `ms`, `bytes`, `ok`). |
 | `OPENMONETIS_EXPORT_DIR` | não | `~/Downloads/openmonetis-mcp` | Diretório onde exportações e modelos de importação são gravados. |
 | `OPENMONETIS_CREDENTIAL_STORE` | não | `keychain`/`secret-tool`/`file` | Força o backend do cofre: `keychain`, `secret-tool`, `file` ou `none`. |
@@ -99,6 +102,23 @@ Copie `.env.example` para `.env` e preencha pelo menos `OPENMONETIS_URL` e as cr
 
 ¹ Ou defina `OPENMONETIS_COOKIE`.
 ² Obrigatório quando o host HTTP não é loopback.
+
+### Perfil de catálogo (`core` vs `full`)
+
+`full` é o padrão e expõe as 75 ferramentas. `core` reduz o catálogo a 14 leituras
+(`get_dashboard_overview`, `get_dashboard_attention`, `get_dashboard_snapshot`,
+`list_transactions`, `get_transaction`, `list_accounts`, `list_cards`, `list_invoices`,
+`list_bills`, `list_budgets`, `list_goals`, `list_categories`, `list_tags`, `list_people`),
+que cobrem a rotina do mês sem as ferramentas avançadas nem as de escrita.
+
+Use `core` quando o agente tem orçamento de contexto apertado ou quando o cliente cobra o
+`tools/list` a cada sessão: o catálogo cai de ~78 KB (~20 mil tokens) para ~12 KB
+(~3,2 mil tokens), uma economia de ~84%. Nesse perfil as `instructions` do servidor avisam
+que o catálogo está reduzido; basta definir `OPENMONETIS_MCP_TOOLS=full` para reabrir tudo.
+
+O cache e o retry são transparentes. Se precisar ver dados que acabaram de mudar, reduza
+`OPENMONETIS_MCP_CACHE_TTL_MS` (ou use `0` para desligar o cache). Escritas sempre invalidam
+o cache do recurso alterado, então o fluxo "alterar e reler" continua correto.
 
 ### Qual URL usar
 
@@ -492,8 +512,8 @@ isso a primeira tag (`v0.1.0`) precisa existir antes de automatizar.
 | `get_account_cash_flow` | Fluxo de caixa diário e histórico mensal de uma conta. |
 | `list_cards` / `get_card` | Cartões de crédito. |
 | `get_invoice_history` | Histórico de faturas de um cartão. |
-| `list_invoices` | Faturas de todos os cartões no mês. |
-| `list_bills` | Contas a pagar do mês, com rateio por pessoa. |
+| `list_invoices` | Faturas de todos os cartões no mês (`detail: "compact"` por padrão). |
+| `list_bills` | Contas a pagar do mês, com rateio por pessoa (`detail: "compact"` por padrão). |
 | `list_budgets` | Orçamentos por categoria. |
 | `list_goals` | Metas, progresso e ritmo. |
 | `list_categories` / `list_tags` | IDs e nomes para filtros e criação. |
@@ -514,7 +534,7 @@ isso a primeira tag (`v0.1.0`) precisa existir antes de automatizar.
 | `get_import_template` | Baixa a planilha modelo de importação. |
 | `list_transaction_attachments` / `list_attachments` | Anexos de uma transação ou do mês. |
 | `get_attachment_download_url` | URL assinada e temporária de um anexo. |
-| `list_installments` | Séries parceladas do mês com progresso e parcelas pendentes. |
+| `list_installments` | Séries parceladas do mês com progresso e parcelas pendentes (`detail: "compact"` por padrão). |
 | `quote_installments` | Cotação da antecipação de parcelas para uma fatura. |
 | `list_person_connections` / `list_person_invitations` | Conexões e convites entre pessoas. |
 | `list_person_settlements` / `get_person_balance` | Acertos e saldo com cada pessoa. |
@@ -597,7 +617,7 @@ pnpm typecheck    # tsc --noEmit
 pnpm test         # node:test com API fake local
 pnpm build        # tsup → dist/
 pnpm check        # lint + typecheck + test + build
-pnpm bench:tools  # custo do catálogo em tools/list (bytes e tokens aproximados)
+pnpm bench:tools  # custo do tools/list nos perfis core e full (bytes e tokens aproximados)
 
 # contrato: gera tipos + snapshot a partir da instância e valida as rotas usadas
 OPENMONETIS_URL=http://localhost:7002/api-proxy pnpm gen:contract

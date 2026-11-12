@@ -171,6 +171,9 @@ function validationConfig(baseUrl: string, email: string, secret: string): Confi
     writes: "read-only",
     timeoutMs: 20_000,
     maxResponseBytes: 65_536,
+    cacheTtlMs: 30_000,
+    retryAttempts: 2,
+    tools: "full",
     debug: false,
     http: { host: "127.0.0.1", port: 7317 },
   };

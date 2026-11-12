@@ -5,6 +5,9 @@ import { readStoredCredentials } from "./credentials/store.js";
 
 export type WriteMode = "read-only" | "confirm" | "full";
 
+/** Perfil do catálogo exposto ao cliente MCP. */
+export type ToolProfile = "full" | "core";
+
 export type HttpConfig = {
   host: string;
   port: number;
@@ -30,6 +33,12 @@ export type Config = {
   timeoutMs: number;
   /** Teto de bytes do JSON devolvido por uma ferramenta; 0 desliga o corte. */
   maxResponseBytes: number;
+  /** TTL do cache de GET em milissegundos; 0 desliga o cache. */
+  cacheTtlMs: number;
+  /** Tentativas extras em leituras (GET/HEAD) que falharam por erro transitório. */
+  retryAttempts: number;
+  /** Perfil do catálogo: `full` expõe tudo, `core` só o conjunto enxuto. */
+  tools: ToolProfile;
   /** Loga uma linha JSONL por chamada de ferramenta em stderr. */
   debug: boolean;
   http: HttpConfig;
@@ -38,6 +47,8 @@ export type Config = {
 const defaultBaseUrl = "http://localhost:7001";
 const defaultTimeoutMs = 20_000;
 const defaultMaxResponseBytes = 65_536;
+const defaultCacheTtlMs = 30_000;
+const defaultRetryAttempts = 2;
 const defaultHttpHost = "127.0.0.1";
 const defaultHttpPort = 7317;
 const defaultExportFolder = "Downloads/openmonetis-mcp";
@@ -128,6 +139,41 @@ function parseMaxResponseBytes(value: string | undefined): number {
   return bytes;
 }
 
+function parseCacheTtl(value: string | undefined): number {
+  const raw = read(value);
+  if (!raw) return defaultCacheTtlMs;
+
+  const ttl = Number(raw);
+  if (!Number.isInteger(ttl) || ttl < 0) {
+    throw new ConfigError(
+      "OPENMONETIS_MCP_CACHE_TTL_MS deve ser um inteiro maior ou igual a 0 (0 desliga o cache).",
+    );
+  }
+  return ttl;
+}
+
+function parseRetryAttempts(value: string | undefined): number {
+  const raw = read(value);
+  if (!raw) return defaultRetryAttempts;
+
+  const attempts = Number(raw);
+  if (!Number.isInteger(attempts) || attempts < 0 || attempts > 5) {
+    throw new ConfigError("OPENMONETIS_MCP_RETRY_ATTEMPTS deve ser um inteiro entre 0 e 5.");
+  }
+  return attempts;
+}
+
+function parseToolProfile(value: string | undefined): ToolProfile {
+  const normalized = read(value)?.toLowerCase();
+
+  if (!normalized || normalized === "full" || normalized === "all") return "full";
+  if (normalized === "core" || normalized === "minimal") return "core";
+
+  throw new ConfigError(
+    `OPENMONETIS_MCP_TOOLS inválido: "${value}". Use full (padrão) ou core (catálogo reduzido).`,
+  );
+}
+
 function parseDebug(value: string | undefined): boolean {
   const normalized = read(value)?.toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
@@ -177,6 +223,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     writes: parseWriteMode(env.OPENMONETIS_MCP_WRITES),
     timeoutMs: parseTimeout(env.OPENMONETIS_TIMEOUT_MS),
     maxResponseBytes: parseMaxResponseBytes(env.OPENMONETIS_MCP_MAX_RESPONSE_BYTES),
+    cacheTtlMs: parseCacheTtl(env.OPENMONETIS_MCP_CACHE_TTL_MS),
+    retryAttempts: parseRetryAttempts(env.OPENMONETIS_MCP_RETRY_ATTEMPTS),
+    tools: parseToolProfile(env.OPENMONETIS_MCP_TOOLS),
     debug: parseDebug(env.OPENMONETIS_MCP_DEBUG),
     http: {
       host,
