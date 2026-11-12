@@ -72,9 +72,19 @@ const IdInput = z.object({ id: uuidSchema.describe("ID da transação.") });
 const BaseTransactionFields = {
   name: z.string().trim().min(1).max(160),
   amount: z.number().positive().max(999_999_999.99),
-  type: z.enum(transactionTypes),
-  condition: z.enum(transactionConditions),
-  paymentMethod: z.enum(paymentMethods),
+  type: z
+    .enum(transactionTypes)
+    .describe(
+      "Tipo da transação. Transferências (type: 'transfer') só aceitam condition: 'single'.",
+    ),
+  condition: z
+    .enum(transactionConditions)
+    .describe(
+      "'single' (única, padrão), 'installment' (parcelada) ou 'recurring' (recorrente). Transferências só aceitam 'single'.",
+    ),
+  paymentMethod: z
+    .enum(paymentMethods)
+    .describe("Forma de pagamento. Transferências (type: 'transfer') exigem 'bank_transfer'."),
   purchaseDate: z.iso.date(),
   personId: uuidSchema,
   categoryId: uuidSchema.optional(),
@@ -107,10 +117,59 @@ const BaseTransactionFields = {
     .describe("Divisão entre pessoas. A soma deve ser igual ao amount."),
 };
 
-export const CreateTransactionInput = z.object({
+export const CreateTransactionFields = z.object({
   ...BaseTransactionFields,
-  condition: z.enum(transactionConditions).default("single"),
+  condition: z
+    .enum(transactionConditions)
+    .default("single")
+    .describe(
+      "'single' (única, padrão), 'installment' (parcelada) ou 'recurring' (recorrente). Transferências só aceitam 'single'.",
+    ),
   confirm: z.boolean().optional(),
+});
+
+export const CreateTransactionInput = CreateTransactionFields.superRefine((data, ctx) => {
+  if (data.type !== "transfer") return;
+
+  if (data.condition !== "single") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["condition"],
+      message: "Transferências não aceitam recorrência nem parcelamento: use condition: 'single'.",
+    });
+  }
+
+  if (data.paymentMethod !== "bank_transfer") {
+    ctx.addIssue({
+      code: "custom",
+      path: ["paymentMethod"],
+      message: "Transferências exigem paymentMethod: 'bank_transfer'.",
+    });
+  }
+
+  if (!data.sourceAccountId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["sourceAccountId"],
+      message: "Transferências exigem sourceAccountId.",
+    });
+  }
+
+  if (!data.destinationAccountId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["destinationAccountId"],
+      message: "Transferências exigem destinationAccountId.",
+    });
+  }
+
+  if (data.sourceAccountId && data.sourceAccountId === data.destinationAccountId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["destinationAccountId"],
+      message: "As contas de origem e destino devem ser diferentes.",
+    });
+  }
 });
 
 const CreateInput = CreateTransactionInput;
@@ -205,7 +264,7 @@ export const transactionWriteTools: WriteToolSpec[] = [
     name: "create_transaction",
     title: "Criar transação",
     description:
-      "Cria uma transação de receita, despesa, transferência, compra parcelada ou série recorrente. A API valida todas as regras de domínio (categoria obrigatória em receita/despesa, cartão obrigatório no crédito, contas distintas em transferência, etc.). Sem `confirm: true` a ferramenta apenas devolve o payload que seria enviado.",
+      "Cria uma transação de receita, despesa, transferência, compra parcelada ou série recorrente. Transferências (type: 'transfer') só aceitam condition: 'single' e paymentMethod: 'bank_transfer' — a API do OpenMonetis não suporta transferência recorrente nem parcelada. A API valida todas as regras de domínio (categoria obrigatória em receita/despesa, cartão obrigatório no crédito, contas distintas em transferência, etc.). Sem `confirm: true` a ferramenta apenas devolve o payload que seria enviado.",
     inputSchema: CreateInput.shape,
     plan: (input) => {
       const args = CreateInput.parse(input);

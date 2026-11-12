@@ -210,6 +210,61 @@ describe("servidor MCP", () => {
     await close();
   });
 
+  it("rejeita transferência recorrente com mensagem clara", async () => {
+    const { client, close } = await connect(makeConfig(api.url));
+    const before = api.received("POST", "/transactions").length;
+
+    const result = await client.callTool({
+      name: "create_transaction",
+      arguments: {
+        name: "Transferência mensal",
+        amount: 1000,
+        type: "transfer",
+        condition: "recurring",
+        recurrenceFrequency: "monthly",
+        paymentMethod: "bank_transfer",
+        purchaseDate: "2026-11-12",
+        personId: "11111111-1111-4111-8111-111111111111",
+        sourceAccountId: "33333333-3333-4333-8333-333333333333",
+        destinationAccountId: "44444444-4444-4444-8444-444444444444",
+        confirm: true,
+      },
+    });
+
+    assert.equal(isError(result), true);
+    assert.match(textOf(result), /condition: 'single'/);
+    assert.equal(api.received("POST", "/transactions").length, before, "não deve escrever");
+
+    await close();
+  });
+
+  it("rejeita transferência com pix", async () => {
+    const { client, close } = await connect(makeConfig(api.url));
+    const before = api.received("POST", "/transactions").length;
+
+    const result = await client.callTool({
+      name: "create_transaction",
+      arguments: {
+        name: "Transferência",
+        amount: 500,
+        type: "transfer",
+        condition: "single",
+        paymentMethod: "pix",
+        purchaseDate: "2026-11-12",
+        personId: "11111111-1111-4111-8111-111111111111",
+        sourceAccountId: "33333333-3333-4333-8333-333333333333",
+        destinationAccountId: "44444444-4444-4444-8444-444444444444",
+        confirm: true,
+      },
+    });
+
+    assert.equal(isError(result), true);
+    assert.match(textOf(result), /bank_transfer/);
+    assert.equal(api.received("POST", "/transactions").length, before, "não deve escrever");
+
+    await close();
+  });
+
   it("não injeta defaults em update_transaction", async () => {
     const { client, close } = await connect(makeConfig(api.url));
     const id = "11111111-1111-4111-8111-111111111111";
